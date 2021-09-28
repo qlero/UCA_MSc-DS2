@@ -1,0 +1,175 @@
+---
+title: "Practical work on LDA"
+output: html_notebook
+---
+  
+The goal is to apply LDA on the Wine dataset, available in the `pgmm` package. 
+
+# Library and dataset imports
+
+```{r}
+# we'll use this package to load the data
+#install.packages("pgmm")
+#install.packages('mvtnorm')
+library(pgmm); library(mvtnorm)
+```
+
+Once the package are loaded, we can load the data in the environment.
+
+```{r}
+data(wine)
+head(wine)
+```
+
+The documentation of the data can provide
+
+```{r}
+# ?wine
+X = as.matrix(wine[,c(2,4)])
+dim(X)
+colnames(X)
+y = as.numeric(wine$Type!=1)+1
+```
+It is of course possible to look at the data.
+
+```{r}
+plot(X, col = y+1, pch=19)
+```
+# Classification with LDA
+
+The first step is to learn the LDA model from the data (i.e. estimate from the data the model parameters).
+Once the model is learned we will be able to classify new data to one of the two classes.
+
+LDA assumes the following model:
+
+$$p(X|Z = 1; \mu, \sigma) = \mathcal{N}((x; \mu_k, \Sigma)$$
+
+> The covariance matrix is the full one. Only $\mu$ depends on the class
+
+and $$P(Z=k) = \pi_k$$
+
+The ML estimation leads to the following updates:
+
+$$\hat{\pi}_k = \sum_{i=1}^n \mathbb{1}(z_i=k)/n$$
+$$\hat{\mu_k} = \sum_{i=1} \mathbb{1}(z_i = k) x_i / n_k$$
+$$\hat{\Sigma} = \frac{1}{n}\sum_{k=1}^K n_k S_k$$
+where:
+$$S_k = \frac{1}{n_k}\sum_{i=1}^n \mathbb{1}(z_i = k) (x_i - \hat{\mu_k})^t (x_i -\hat{\mu_k})$$
+
+# Programming an LDA model
+
+```{r}
+lda.learn <- function(X, z) {
+  n = nrow(X); p=ncol(X)
+  K = max(z)
+  prop = rep(NA, K)
+  mu = matrix(NA, K, p)
+  Sigma = matrix(0, p, p)
+  for (k in 1:K){
+    n_k     = sum(z==k)
+    prop[k] = n_k/n
+    mu[k,]  = colSums(X[z==k,])/n_k
+    Sigma   = Sigma + n_k / n * cov(X[z == k,])
+  }
+  return(list(prop = prop, mu = mu, Sigma = Sigma))
+}
+
+ldaDF.learn <- function(X_dataframe, y) {
+  means <- aggregate(X_dataframe, by=list(y), FUN=mean)
+  covariance <-  cov(X_dataframe)
+  return(list(mu = means, Sigma = covariance))
+}
+```
+
+```{r}
+lda = lda.learn(X, y)
+#lda = ldaDF.learn(wine[,c(2,4)], y)
+lda
+```
+# Classification
+
+For the classification step, we use the Maximum A-Posteriori (MAP) rule:
+$$z^* = argmax_k P(Z=k|X=x^*)$$
+To compute those posterior probabilities from the data and the learned parameter, we can rely on the Bayes' rule:
+$$P(Z=k|X=x^*, \hat{\theta}) = \frac{P(Z=k|\hat{\theta})P(x^*|Z=k, \hat{\theta})}{P(x)}$$
+$$P(Z=k|X=x^*, \hat{\theta}) = \frac{\hat{\pi}_k.\phi(x^*|\hat{\mu}_k, \hat{\Sigma})}{P(x)}$$
+Where $\phi$ is the PDF of the Gaussian distribution.
+
+So, the prediction step of LDA resumes to the computation of the $K$ posterior probabilities $P(Z=k|X=x^*)$ with the above formulas:
+
+```{r}
+lda.predict <- function(xstar, params){
+  K = length(params$prop)
+  Prob = matrix(NA, nrow(xstar), K)
+  for (k in 1:K){
+    Prob[,k] = params$prop[k] * dmvnorm(xstar, params$mu[k,], params$Sigma)
+  }
+  Prob = t(apply(Prob, 1, FUN = function(x){x/sum(x)}))
+  zstar = apply(Prob, 1, FUN = which.max)
+  return(list(probabilities = Prob, classification = zstar))
+}
+```
+
+```{r}
+predictions = lda.predict(X, lda)
+predictions
+```
+
+# Classification on the whole dataset
+
+Let's now come back to the full 3-class wine dataset and classify it with LDA, using the minimal setup (train/test split, at 33%) to evaluate in a correct way the performance of LDA on this problem.
+
+```{r}
+dataset = wine[sample(1:length(wine$Type)),]
+X = dataset[, -1] #excluding the first column: label
+y = dataset$Type
+```
+
+### Splitting train and test sets
+
+```{r}
+split = round(2/3*length(y))
+X_train = X[0:split,]
+X_test = X[split:length(y),]
+y_train = y[0:split]
+y_test = y[split:length(y)]
+```
+
+Other way:
+
+```{r}
+training_set = sample(nrow(X), round(2/3*length(y)))
+split = round(2/3*length(y))
+X_train = X[training_set,]
+X_test = X[-training_set,]
+y_train = y[training_set]
+y_test = y[-training_set]
+```
+
+```{r}
+model = lda.learn(X_train, y_train)
+model
+```
+
+### Prediction on test set
+
+```{r}
+predictions = lda.predict(X_test, model)
+predictions
+```
+### Measuring Accuracy
+
+```{r}
+nb_match = sum(predictions$classification != y_test)
+
+cat("\n: Classification table:\n")
+table(y_test, predictions$classification)
+
+cat("\nError Rate:", nb_match/length(y_test))
+```
+
+
+
+
+
+
