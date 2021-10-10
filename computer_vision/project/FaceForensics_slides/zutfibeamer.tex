@@ -1,0 +1,96 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% I, the copyright holder of this work, release this work into the
+%% public domain. This applies worldwide. In some countries this may
+%% not be legally possible; if so: I grant anyone the right to use
+%% this work for any purpose, without any conditions, unless such
+%% conditions are required by law.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% This theme was based on fibeamer theme 
+% If you found any bugs please contact @karlosos
+% This repository is hosted on github https://github.com/karlosos/zut-fibeamer/
+
+\documentclass{beamer}
+\usetheme[faculty=wi]{fibeamer}
+\usepackage[utf8]{inputenc}
+\usepackage[
+  main=english,
+  english
+]{babel}
+
+\includegraphics[width=0.5\textwidth]{fibeamer/logo/zut/logo.png}
+\title{FaceForensics++, a seminal paper and dataset}
+\subtitle{Quentin Le Roux, 2021}
+% \author{Author's Name}
+
+\usepackage{ragged2e}  % `\justifying` text
+\usepackage{booktabs}  % Tables
+\usepackage{tabularx}
+\usepackage{tikz}      % Diagrams
+\usetikzlibrary{calc, shapes, backgrounds}
+\usepackage{amsmath, amssymb}
+\usepackage{url}       % `\url`s
+\usepackage{listings}  % Code listings
+\usepackage{graphicx}
+
+\frenchspacing
+\begin{document}
+  \frame[c]{\maketitle}
+  \AtBeginSection[]{% Print an outline at the beginning of sections
+    \begin{frame}<beamer>
+      \frametitle{Outline for Section \thesection}
+    %   \tableofcontents[currentsection]
+    \end{frame}}
+
+  \begin{darkframes}
+
+    \begin{frame}[label=lists]{Context}
+        % \framesubtitle{Subtitle}
+        The Bushman Rock Shelter (BRS) site, Limpopo basin, South Africa, has yielded important 
+        archaeological sequences from the Later Stone Age (LSA) prehistoric period (Porraz et al., 2018).\clearpage
+        \centering\includegraphics[width=0.9\textwidth]{fibeamer/logo/zut/BRS.png}
+    \end{frame}
+
+    
+    \begin{frame}[label=lists]{Conclusion}
+        \textbf{Result}: wood charcoal SEM image classification with ML techniques is feasible even with a sparse dataset.\clearpage
+        This is a proof of concept for the use of ML in archaeological science and archaebotany. It can be built upon by other, future teams.
+        \clearpage
+        To expand this work, further strategies should be explored such as:\begin{itemize}
+        \item Balancing the data using a mix of under- and over-sampling.
+        \item Using different model architectures
+        \item Implement transfer learning
+    \end{itemize}
+
+    \end{frame} 
+
+    \subsection{Citations and Bibliography}
+    
+    % \begin{frame}[label=bibliography]{Bibliography}
+    %   \begin{thebibliography}{9}
+    %     \scriptsize{
+    %     \bibitem{ng}
+    %         Ng, Andrew.
+    %         \emph{NLP and Word Embeddings - CS230 Deep Learning, Stanford University}.
+    %         deeplearning.ai, 2021.
+    %     \bibitem{lecun}
+    %         Le Cun, Yann.
+    %         \emph{The MNIST database of handwritten digits}.
+    %         1998.
+    %     \bibitem{kipf2017semi}
+    %         Kipf, Thomas N. and Welling, Max.
+    %         \emph{Semi-Supervised Classification with Graph Convolutional Networks}.
+    %         International Conference on Learning Representations (ICLR), 2017.
+    %     \bibitem{battaglia2018relational}
+    %         Battaglia, P. et al.
+    %         \emph{Relational inductive biases, deep learning, and graph networks}. 2018.
+    %     \bibitem{bruna2014spectral}
+    %         Bruna, J. et al.
+    %         \emph{Spectral Networks and Locally Connected Networks on Graphs}. 2014.
+    %     }
+    %   \end{thebibliography}
+    % \end{frame}
+    
+\end{darkframes}
+
+\end{document}
