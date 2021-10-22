@@ -1,0 +1,407 @@
+---
+title: "Tutorial Expectation-Maximization for Gaussian Mixture Models"
+output:
+  html_document:
+    df_print: paged
+---
+  
+The goal is to apply EM for multivariate GMMs on the Wine dataset, available in the `pgmm` package.
+
+### Instructions
+
+1) **Implementing the EM**
+
+- Implement from scratch the EM algorithm for a GMM on the variables 2 and 4 of the wine data set.
+- Cluster the data and compare your results with k-means.
+- To assess the quality of the clustering, you may use the function classError and/or adjustedRandIndex from the Mclust package.
+
+
+2) **Model selection**
+
+- Try to find a relevant number of clusters using the three methods seen in class: AIC, BIC, and (cross-)validated likelihood.
+
+3) **Towards higher dimensional spaces**
+
+- Try to model more than just two variables of the same data set. Do you find the same clusters, the same number of clusters.
+
+<hr>
+
+# 1 - Library and dataset imports
+
+#### 1.1. Library imports
+
+```{r  echo=TRUE, results='hide', message=FALSE}
+# we'll use this package to load the data
+#install.packages("pgmm"); install.packages('mvtnorm'); install.packages('mclust')
+library(pgmm); library(mvtnorm); library(mclust)
+```
+
+### 1.2. Dataset import
+
+Once the package are loaded, we can load the data in the environment.
+```{r}
+data(wine)
+head(wine)
+```
+
+We extract the variables 2 and 4 of the wine dataset, plus the labels of each entry.
+
+```{r}
+X = as.matrix(wine[,c(2,4)])
+y = as.numeric(wine$Type!=1)+1
+```
+
+#### 1.3. Dataset check
+
+```{r}
+print(paste("Feature dimensions: ", paste(dim(X), collapse= ", ")))
+print(paste("feature names: ", paste(colnames(X), collapse=", ")))
+```
+
+<u>Plots of the data (178 2-dimensional data points):</u>
+
+```{r}
+plot(X, col = y+1, pch=19)
+```
+
+# 2 - Function declarations
+
+#### 2.1. Generic functions
+
+This code is reproduced from the class.
+
+```{r}
+
+log_gaussian_density <- function (x, mean, sigma) {
+  ######
+  #### Computes the log-density probability of a variable estimated to follow
+  #### a gaussian distribution.
+  ######
+  distval <- mahalanobis(x, center = mean, cov = sigma)
+  logdet <- determinant(sigma,logarithm = TRUE)$modulus
+  loglikelihood <- -(ncol(x) * log(2 * pi) + logdet + distval)/2
+  return(loglikelihood)
+}
+
+logSumExp <- function (x) {
+  ######
+  #### Computes the log-sum-exponential of a vector, list of variables
+  ######
+  y = max(x)
+  y + log(sum(exp(x - y)))
+}
+
+logNorm <- function (x) {
+  ######
+  #### Log-normalizes a vector, list of variables
+  ######
+  logratio = log(x) - logsumexp(log(x))
+  exp(logratio)
+}
+
+```
+
+#### 2.2. Expectation-Maximization algorithm 
+
+```{r}
+
+logGamma <- function(n, clusters, x, prop, mu, sigma) {
+  ######
+  #### Precomputes the log-value of gamma as part of the EM algorithm
+  ######
+    lgn = matrix(nrow=n, ncol=clusters)
+    for (cl in 1:clusters){
+      lgn[,cl] = log(prop[cl]) + matrix(dmvnorm(x, mu[cl,], sigma[[cl]], log=TRUE))
+    }
+    return(lgn)
+}
+
+expectationMaximization <- function(x, clusters=2, maxIterations=50) {
+  ######
+  #### Implementation of an Expectation Maximization algorithm for multivariate
+  #### data, here the wine dataset provided by the pgmm library.
+  ######
+  
+  # Variable declarations and initializations
+  n = dim(x)[1]
+  K = dim(x)[2]
+  prop = rep(1/clusters, clusters)
+  mu = rmvnorm(clusters, mean=apply(x, K, mean), sigma=diag(K))
+  sigma = lapply(1:clusters, function(i) diag(K))
+
+  # Algorithm loop
+  for (loop in 1:maxIterations){
+    
+    #### Expectation step
+    # Computes the new gamma values
+    gam = logGamma(n, clusters, x, prop, mu, sigma)
+    # Normalizes the gamma rows
+    gam = gam - apply(gam, 1, logSumExp)
+    gam = exp(gam)
+    
+    #### Maximization step
+    for (cl in 1:clusters) {
+      nk = sum(gam[,cl])
+      # Parameter updates
+      prop[cl] = nk/n
+      mu[cl,] = Reduce("+", lapply(1:n, function(i) gam[i,cl]*x[i,]))/nk
+      sigma[[cl]] = Reduce(
+        "+",
+        lapply(1:n,function(i) gam[i,cl]*(x[i,]-mu[cl,])%*%t(x[i,]-mu[cl,]))
+        )/nk
+    }
+  }
+  # computes the log-likelihood per cluster and datapoint
+  likelihoods = c()
+  for (cl in 1:clusters){
+    likelihoods = append(
+      likelihoods,
+      gam[,cl]*as.vector(log(prop[cl]) + 
+                           dmvnorm(x, mean=mu[cl,], sigma=sigma[[cl]], log=TRUE))
+      )
+  }
+  likelihoods = array(likelihoods, dim=c(n, clusters))
+  # Computes the distribution to which each point belongs
+  distributions = (likelihoods == apply(likelihoods, 1, max))
+  distributions = apply(distributions, 1, which)
+  # return statement
+  ret = list(
+    "n_wines" = n,
+    "n_clusters" = K,
+    "cl_proportions" = prop,
+    "cl_means" = mu,
+    "cl_sigma" = sigma,
+    "distributions" = distributions,
+    "logLikelihoods" = likelihoods,
+    "sum_of_llh" = sum(likelihoods)
+    )
+  return(ret)
+}
+```
+
+#### 2.3. K-Means Algorithm
+
+```{r}
+
+generateCentroid <- function(x) {
+  ######
+  #### Generates a random centroid from a given dataset
+  ######
+  
+  # Variable declarations and initializations
+  K = dim(x)[2]
+  centroid = c()
+  
+  # Uniformly draws a value for each dimension of the dataset
+  for (k in 1:K){
+    centroid = append(centroid, runif(1, min(x[,k]), max(x[,k])))
+  }
+  # return statement
+  return(centroid)
+}
+
+euclidianDistance <- function(x, centroid){
+  ######
+  #### Computes the euclidian distance between a datapoint and a centroid
+  #### Note: if data is multidimensional, the mahalanobis distance is chosen
+  ######
+  if (length(x[1,])==1){
+     distances = t(apply(x, 1, function(i) sqrt((i-centroid)^2)))
+    return(distances)
+  } else {
+    return(mahalanobis(x, centroid, cov(x)))
+  }
+}
+
+kMeans <- function(x, clusters=2, maxIterations=50) {
+  ######
+  #### Implementation of a K-Means algorithm for multivariate data, here 
+  #### the wine dataset provided by the pgmm library.
+  ######
+  
+  # Variable declarations and initializations
+  n = dim(x)[1]
+  K = dim(x)[2]
+  centroids = lapply(1:clusters, function(i) generateCentroid(x))
+  centroids = matrix(unlist(centroids), ncol=clusters, byrow=TRUE)
+  
+  # Computes the euclidian distances between every point and each centroid
+  for (loop in 1:maxIterations){
+    distances = c()
+    for (cl in 1:clusters){
+      cluster_dist = euclidianDistance(x, centroids[cl,])
+      distances = append(distances, cluster_dist)
+    }
+    distances = array(distances, dim=c(n, K))
+    
+    # Finds the closest centroids
+    closest = (distances == apply(distances, 1, min))
+   
+    # Computes the new closest centroids
+    centroids = c()
+    for (cl in 1:clusters) {
+      centroids = rbind(centroids, colMeans(x[closest[,cl],]))
+    }
+    
+    # Erases the matrix's columns and rows names inherited from the dataset
+    colnames(centroids) <- NULL
+    rownames(centroids) <- NULL
+  }
+  
+  #return statement
+  ret = list(
+    "centroids" = centroids,
+    "distances" = distances,
+    "closest_centroid" = apply(closest, 1, which)
+   )
+  return(ret)
+}
+
+```
+
+#### 2.4. Akaike Information Criterion
+
+```{r}
+
+akaikeIC <- function(logLikelihood, clusters, K) {
+  ######
+  #### Implementation of the the Akaike Information Criterion such that:
+  #### AIC = LLH - eta(M)
+  #### i.e. the final log-likelihood of a model minus the number of free
+  #### scalar parameters in the model (nb of proportions (-1 as there are
+  #### only cluster-1 degrees of freedom) + nb of means + nb of sigmas)
+  ######
+  penalization = (clusters-1) + clusters*K + clusters*((K*(K+1))/2)
+  return(logLikelihood - penalization)
+}
+
+```
+
+#### 2.5. Bayesian Information Criterion
+
+```{r}
+
+bayesianIC <- function(logLikelihood, clusters, n, K) {
+  ######
+  #### Implementation of the Bayesian Information Criterion such that:
+  #### BIC = LLH - 1/2*eta(M)*log(n)
+  #### i.e. the final log-likelihood of a model minus the half of the number
+  #### of free scalar parameters in the model (nb of proportions (-1 as there
+  #### are only cluster-1 degrees of freedom) + nb of means + nb of sigmas)
+  #### then multiplied by the log of the number of datapoints
+  ######
+  
+  # Variable declaration
+  penalization = (clusters-1) + clusters*K + clusters*((K*(K+1))/2)
+  return(logLikelihood - 1/2 * penalization * log(n))
+}
+
+```
+
+#### 2.6. (Cross-)Validated Likelihood
+
+```{r}
+
+cvLikelihood <- function() {
+  ######
+  #### 
+  ######
+  
+  # Variable declaration
+  
+  # 
+}
+
+```
+
+# 3 - Comparing EM and K-Means
+
+#### 3.1. Computing the results
+
+We compute our results with the EM and K-Means algorithms.
+
+```{r}
+clusters = 2
+resultsEM = expectationMaximization(X, clusters)
+resultsKM = kMeans(X, clusters)
+```
+
+We display the final clustering for the EM algorithm:
+
+```{r}
+plot(X, col=resultsEM$distributions+1, pch=19)
+```
+
+We display the final clustering for the K-Means algorithm:
+
+```{r}
+plot(X, col=resultsKM$closest_centroid+1, pch=19)
+```
+
+
+Relying on the **mclust** library, we compute the classError and adjustedRandIndex to assess the quality of our clustering.
+
+#### 3.2. Classification Error
+
+Relying on the **mclust** library, we compute the [classError](https://mclust-org.github.io/mclust/reference/classError.html) to assess the quality of our clustering. The **Classification Error** corresponds to the rate of a given classification relative to the known classes, and the location of misclassified data points. I.e. Lower the better.
+
+<u>Expectation-Maximization:</u>
+
+```{r}
+classError(resultsEM$distributions, y)
+```
+
+<u>K-Means:</u>
+
+```{r}
+classError(resultsKM$closest_centroid, y)
+```
+
+
+#### 3.3. Adjusted Rand Index
+
+Relying on the **mclust** library, we compute the [Adjusted Rand Index](https://mclust-org.github.io/mclust/reference/adjustedRandIndex.html) to assess the quality of our clustering. The **Adjusted Rand Index** compares two partitions of values with a resulting score between 0 and 1, with zero indicating randomness between the two and 1 indicating a perfect match. I.e. Higher the better.
+
+<u>Expectation-Maximization:</u>
+
+```{r}
+adjustedRandIndex(resultsEM$distributions, y)
+```
+
+<u>K-Means:</u>
+
+```{r}
+adjustedRandIndex(resultsKM$closest_centroid, y)
+```
+
+#### 3.4. Comments and observations
+
+When re-knitting/running the R markdown, it happens that, *in general*, the EM algorithm performs better than the K-Means (rarely, the reverse happens, which seems to be tied to the initialization of the centroids/parameters).
+
+Sometimes, the K-Means ends up splitting the data points vertically rather than horizontally (this case results in the K-Means performing better than the EM algorithm.)
+
+# 4 - Performing Model Selection with the EM algorithm
+
+#### 4.1. Using the Akaike Information Criterion
+
+```{r}
+
+for (j in 2:10){
+  res = expectationMaximization(X, clusters=j, maxIterations = 200)
+  print(akaikeIC(res$sum_of_llh, j, dim(X)[2]))
+}
+
+```
+
+#### 4.2. Using the Bayesian Information Criterion
+
+```{r}
+
+for (j in 2:10){
+  res = expectationMaximization(X, clusters=j, maxIterations = 200)
+  print(bayesianIC(res$sum_of_llh, j, dim(X)[1], dim(X)[2]))
+}
+
+```
+
+#### 4.3. Using Cross-Validated Likelihood
