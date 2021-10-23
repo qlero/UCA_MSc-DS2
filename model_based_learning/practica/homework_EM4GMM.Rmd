@@ -64,6 +64,27 @@ print(paste("feature names: ", paste(colnames(X), collapse=", ")))
 plot(X, col = y+1, pch=19)
 ```
 
+#### 1.4. Train/Test Split
+
+We split the dataset, 2/3 for training and 1/3 for testing.
+
+```{r}
+
+n = dim(X)[1]
+
+training_split = round(2/3*n,0)
+
+randomized_indexes = sample(1:nrow(X))
+randomized_X = X[randomized_indexes,]
+randomized_y = y[randomized_indexes]
+
+X_train = randomized_X[1:training_split,]
+X_test = randomized_X[training_split:n,]
+y_train = randomized_y[1:training_split]
+y_test = randomized_y[training_split:n]
+
+```
+
 # 2 - Function declarations
 
 #### 2.1. Generic functions
@@ -80,12 +101,13 @@ log_gaussian_density <- function (x, mean, sigma) {
   distval <- mahalanobis(x, center = mean, cov = sigma)
   logdet <- determinant(sigma,logarithm = TRUE)$modulus
   loglikelihood <- -(ncol(x) * log(2 * pi) + logdet + distval)/2
+  # return statement
   return(loglikelihood)
 }
 
 logSumExp <- function (x) {
   ######
-  #### Computes the log-sum-exponential of a vector, list of variables
+  #### Computes the log-sum-exponential of a vector, list of variables.
   ######
   y = max(x)
   y + log(sum(exp(x - y)))
@@ -93,7 +115,7 @@ logSumExp <- function (x) {
 
 logNorm <- function (x) {
   ######
-  #### Log-normalizes a vector, list of variables
+  #### Log-normalizes a vector, list of variables.
   ######
   logratio = log(x) - logsumexp(log(x))
   exp(logratio)
@@ -107,13 +129,71 @@ logNorm <- function (x) {
 
 logGamma <- function(n, clusters, x, prop, mu, sigma) {
   ######
-  #### Precomputes the log-value of gamma as part of the EM algorithm
+  #### Precomputes the log-value of gamma as part of the EM algorithm.
   ######
+  
+  # Computes the gammas per clusters
     lgn = matrix(nrow=n, ncol=clusters)
     for (cl in 1:clusters){
       lgn[,cl] = log(prop[cl]) + matrix(dmvnorm(x, mu[cl,], sigma[[cl]], log=TRUE))
     }
+    
+    # return statement
     return(lgn)
+}
+
+logLikelihoodEM <- function(clusters, x, gam, prop, mu, sigma) {
+  ######
+  #### Computes the log-likelihood for a given dataset.
+  ######
+  
+  # Computes the log-likelihood per cluster and datapoint
+  likelihoods = c()
+  for (cl in 1:clusters){
+    likelihoods = append(
+      likelihoods,
+      gam[,cl]*as.vector(log(prop[cl]) + 
+                           dmvnorm(x, mean=mu[cl,], sigma=sigma[[cl]], log=TRUE))
+      )
+  }
+  likelihoods = array(likelihoods, dim=c(dim(x)[1], clusters))
+  distributions = findCluster(likelihoods)
+  
+  # return statement
+  return(list("likelihoods" = likelihoods, "distributions" = distributions))
+}
+
+mostMatchingDistribution <- function(clusters, x, prop, mu, sigma){
+  ######
+  #### Given a set of points, find the most matching distribution for them.
+  #### to be used for a test set.
+  ######
+  # Computes the likelihood of belonging to a distribution
+  likelihoods = c()
+  for (cl in 1:clusters) {
+    likelihoods = append(likelihoods, log(prop[cl]) + 
+      dmvnorm(x, mean=mu[cl,], sigma=sigma[[cl]], log=TRUE))
+  }
+  likelihoods = array(likelihoods, dim = c(dim(x)[1], clusters))
+  distributions = findCluster(likelihoods)
+  
+  # return statement
+  return(list("likelihoods" = likelihoods, "distributions" = distributions))
+}
+
+findCluster <- function(likelihoods) {
+  ######
+  #### Given an array of likelihood with each column representing the 
+  #### likelihood of belonging to a specific cluster, finds the most
+  #### matching cluster.
+  ######
+  
+  # Computes the distribution to which each point belongs
+  distributions = (likelihoods == apply(likelihoods, 1, max))
+  distributions = apply(distributions, 1, which)
+  
+  # Return statement
+  return(distributions)
 }
 
 expectationMaximization <- function(x, clusters=2, maxIterations=50) {
@@ -126,7 +206,7 @@ expectationMaximization <- function(x, clusters=2, maxIterations=50) {
   n = dim(x)[1]
   K = dim(x)[2]
   prop = rep(1/clusters, clusters)
-  mu = rmvnorm(clusters, mean=apply(x, K, mean), sigma=diag(K))
+  mu = rmvnorm(clusters, colMeans(x), cov(x))#mean=apply(x, K, mean), sigma=diag(K))
   sigma = lapply(1:clusters, function(i) diag(K))
 
   # Algorithm loop
@@ -151,29 +231,21 @@ expectationMaximization <- function(x, clusters=2, maxIterations=50) {
         )/nk
     }
   }
-  # computes the log-likelihood per cluster and datapoint
-  likelihoods = c()
-  for (cl in 1:clusters){
-    likelihoods = append(
-      likelihoods,
-      gam[,cl]*as.vector(log(prop[cl]) + 
-                           dmvnorm(x, mean=mu[cl,], sigma=sigma[[cl]], log=TRUE))
-      )
-  }
-  likelihoods = array(likelihoods, dim=c(n, clusters))
-  # Computes the distribution to which each point belongs
-  distributions = (likelihoods == apply(likelihoods, 1, max))
-  distributions = apply(distributions, 1, which)
+  
+  # Computes the llh results for the given data
+  llh_results = logLikelihoodEM(clusters, x, gam, prop, mu, sigma)
+  
   # return statement
   ret = list(
     "n_wines" = n,
     "n_clusters" = K,
+    "cl_gamma" = gam,
     "cl_proportions" = prop,
     "cl_means" = mu,
     "cl_sigma" = sigma,
-    "distributions" = distributions,
-    "logLikelihoods" = likelihoods,
-    "sum_of_llh" = sum(likelihoods)
+    "distributions" = llh_results$distributions,
+    "logLikelihoods" = llh_results$likelihoods,
+    "sum_of_llh" = sum(llh_results$likelihoods)
     )
   return(ret)
 }
@@ -185,16 +257,18 @@ expectationMaximization <- function(x, clusters=2, maxIterations=50) {
 
 generateCentroid <- function(x) {
   ######
-  #### Generates a random centroid from a given dataset
+  #### Generates a random centroid from a given dataset.
   ######
   
   # Variable declarations and initializations
   K = dim(x)[2]
   centroid = c()
   
-  # Uniformly draws a value for each dimension of the dataset
+  # Randomly draws a value for each dimension of the dataset
   for (k in 1:K){
-    centroid = append(centroid, runif(1, min(x[,k]), max(x[,k])))
+    new_centroid = rmvnorm(1, colMeans(x), cov(X))
+    colnames(new_centroid) <- NULL
+    centroid = append(centroid, new_centroid)
   }
   # return statement
   return(centroid)
@@ -202,15 +276,44 @@ generateCentroid <- function(x) {
 
 euclidianDistance <- function(x, centroid){
   ######
-  #### Computes the euclidian distance between a datapoint and a centroid
-  #### Note: if data is multidimensional, the mahalanobis distance is chosen
+  #### Computes the euclidian distance between a datapoint and a centroid.
   ######
-  if (length(x[1,])==1){
-     distances = t(apply(x, 1, function(i) sqrt((i-centroid)^2)))
-    return(distances)
-  } else {
-    return(mahalanobis(x, centroid, cov(x)))
+  
+  # Function declaration
+  dist = function(x, y) (x-y)^2
+  
+  # Computes the distances
+  distances = t(apply(x, 1, 
+                      function(i) sqrt(sum(mapply(dist, i, centroid))))
+                )
+  
+  # Return statement
+  return(distances)
+}
+
+findClosestCentroids <- function(x, centroids){
+  ######
+  #### Computes the closest centroids for a given set of datapoints.
+  ######
+  
+  # Variable declarations and initializations
+  n = dim(x)[1]
+  K = dim(x)[2]
+  
+  # Computes the distances
+  distances = c()
+  for (cl in 1:clusters){
+    cluster_dist = euclidianDistance(x, centroids[cl,])
+    distances = append(distances, cluster_dist)
   }
+  distances = array(distances, dim=c(n, K))
+  
+  # Finds the closest centroids
+  closest = (distances == apply(distances, 1, min))
+  
+  # Return statement
+  return(list("distances"=distances, "closest"=closest))
+    
 }
 
 kMeans <- function(x, clusters=2, maxIterations=50) {
@@ -227,20 +330,14 @@ kMeans <- function(x, clusters=2, maxIterations=50) {
   
   # Computes the euclidian distances between every point and each centroid
   for (loop in 1:maxIterations){
-    distances = c()
-    for (cl in 1:clusters){
-      cluster_dist = euclidianDistance(x, centroids[cl,])
-      distances = append(distances, cluster_dist)
-    }
-    distances = array(distances, dim=c(n, K))
     
-    # Finds the closest centroids
-    closest = (distances == apply(distances, 1, min))
+    # Computes the closest centroids
+    closest_centroids = findClosestCentroids(x, centroids)
    
     # Computes the new closest centroids
     centroids = c()
     for (cl in 1:clusters) {
-      centroids = rbind(centroids, colMeans(x[closest[,cl],]))
+      centroids = rbind(centroids, colMeans(x[closest_centroids$closest[,cl],]))
     }
     
     # Erases the matrix's columns and rows names inherited from the dataset
@@ -251,8 +348,8 @@ kMeans <- function(x, clusters=2, maxIterations=50) {
   #return statement
   ret = list(
     "centroids" = centroids,
-    "distances" = distances,
-    "closest_centroid" = apply(closest, 1, which)
+    "distances" = closest_centroids$distances,
+    "closest_centroids" = apply(closest_centroids$closest, 1, which)
    )
   return(ret)
 }
@@ -316,9 +413,9 @@ cvLikelihood <- function() {
 
 # 3 - Comparing EM and K-Means
 
-#### 3.1. Computing the results
+#### 3.1.1. Computing the results (Full Dataset)
 
-We compute our results with the EM and K-Means algorithms.
+We compute our results with the EM and K-Means algorithms on the full dataset.
 
 ```{r}
 clusters = 2
@@ -330,18 +427,61 @@ We display the final clustering for the EM algorithm:
 
 ```{r}
 plot(X, col=resultsEM$distributions+1, pch=19)
+points(resultsEM$cl_means, col=1, pch=10)
 ```
 
 We display the final clustering for the K-Means algorithm:
 
 ```{r}
-plot(X, col=resultsKM$closest_centroid+1, pch=19)
+plot(X, col=resultsKM$closest_centroids + 1, pch=19)
+points(resultsKM$centroids, col=1, pch=10)
 ```
 
+#### 3.1.2. Computing the results (Train-Test Split)
+
+We compute our results with the EM and K-Means algorithms on the training set.
+
+```{r}
+clusters = 2
+resultsEM_train = expectationMaximization(X_train, clusters)
+resultsKM_train = kMeans(X_train, clusters)
+```
+
+Then we test our clustering results on the test dataset.
+
+```{r}
+test_resultsEM = mostMatchingDistribution(
+  resultsEM_train$n_clusters, 
+  X_test, 
+  resultsEM_train$cl_proportions, 
+  resultsEM_train$cl_means, 
+  resultsEM_train$cl_sigma
+  )
+
+test_resultsKM = findClosestCentroids(
+  X_test, 
+  resultsKM_train$centroids
+  )
+test_resultsKM$closest = apply(test_resultsKM$closest, 1, which)
+```
+
+We display the final clustering for the EM algorithm:
+
+```{r}
+plot(X_test, col=test_resultsEM$distributions+1, pch=19)
+points(resultsEM$cl_means, col=1, pch=10)
+```
+
+We display the final clustering for the K-Means algorithm:
+
+```{r}
+plot(X_test, col=test_resultsKM$closest+1, pch=19)
+points(resultsKM$centroids, col=1, pch=10)
+```
 
 Relying on the **mclust** library, we compute the classError and adjustedRandIndex to assess the quality of our clustering.
 
-#### 3.2. Classification Error
+#### 3.2.1 Classification Error when clustering the whole dataset
 
 Relying on the **mclust** library, we compute the [classError](https://mclust-org.github.io/mclust/reference/classError.html) to assess the quality of our clustering. The **Classification Error** corresponds to the rate of a given classification relative to the known classes, and the location of misclassified data points. I.e. Lower the better.
 
@@ -358,7 +498,22 @@ classError(resultsKM$closest_centroid, y)
 ```
 
 
-#### 3.3. Adjusted Rand Index
+#### 3.2.2 Classification Error when clustering the test set (after training)
+
+<u>Expectation-Maximization:</u>
+
+```{r}
+classError(test_resultsEM$distributions, y_test)
+```
+
+<u>K-Means:</u>
+
+```{r}
+classError(test_resultsKM$closest, y_test)
+```
+
+
+#### 3.3.1. Adjusted Rand Index when clustering the whole dataset
 
 Relying on the **mclust** library, we compute the [Adjusted Rand Index](https://mclust-org.github.io/mclust/reference/adjustedRandIndex.html) to assess the quality of our clustering. The **Adjusted Rand Index** compares two partitions of values with a resulting score between 0 and 1, with zero indicating randomness between the two and 1 indicating a perfect match. I.e. Higher the better.
 
@@ -374,6 +529,21 @@ adjustedRandIndex(resultsEM$distributions, y)
 adjustedRandIndex(resultsKM$closest_centroid, y)
 ```
 
+#### 3.3.2. Adjusted Rand Index when clustering the test set (after training)
+
+<u>Expectation-Maximization:</u>
+
+```{r}
+adjustedRandIndex(test_resultsEM$distributions, y_test)
+```
+
+<u>K-Means:</u>
+
+```{r}
+adjustedRandIndex(test_resultsKM$closest, y_test)
+```
+
+
 #### 3.4. Comments and observations
 
 When re-knitting/running the R markdown, it happens that, *in general*, the EM algorithm performs better than the K-Means (rarely, the reverse happens, which seems to be tied to the initialization of the centroids/parameters).
@@ -382,14 +552,24 @@ Sometimes, the K-Means ends up splitting the data points vertically rather than 
 
 # 4 - Performing Model Selection with the EM algorithm
 
+Starting with a cluster number of 2, we increase the number and check with different heuristics and criteria to select our best EM model.
+
 #### 4.1. Using the Akaike Information Criterion
 
 ```{r}
 
+akaike_results = c()
 for (j in 2:10){
-  res = expectationMaximization(X, clusters=j, maxIterations = 200)
-  print(akaikeIC(res$sum_of_llh, j, dim(X)[2]))
+  res = expectationMaximization(X, clusters=j, maxIterations = 50)
+  akaike_value = akaikeIC(res$sum_of_llh, j, dim(X)[2])
+  akaike_results = append(akaike_results, akaike_value)
+  print(paste("Total log-likelihood with ", j, " clusters: ", 
+              round(akaike_value, 3)))
 }
+
+print(paste("The best result is achieved with ", 
+            which(akaike_results == max(akaike_results))+1, 
+            " clusters."))
 
 ```
 
@@ -397,11 +577,18 @@ for (j in 2:10){
 
 ```{r}
 
+bayesian_results = c()
 for (j in 2:10){
-  res = expectationMaximization(X, clusters=j, maxIterations = 200)
-  print(bayesianIC(res$sum_of_llh, j, dim(X)[1], dim(X)[2]))
+  res = expectationMaximization(X, clusters=j, maxIterations = 50)
+  bayesian_value = bayesianIC(res$sum_of_llh, j, dim(X)[1], dim(X)[2])
+  bayesian_results = append(bayesian_results, bayesian_value)
+  print(paste("Total log-likelihood with ", j, " clusters: ", 
+        round(bayesian_value, 3)))
 }
 
+print(paste("The best result is achieved with ", 
+            which(bayesian_results == max(bayesian_results))+1, 
+            " clusters."))
 ```
 
 #### 4.3. Using Cross-Validated Likelihood
