@@ -372,6 +372,29 @@ akaikeIC <- function(logLikelihood, clusters, K) {
   return(logLikelihood - penalization)
 }
 
+computeAIC <- function(x, max_cluster=10){
+  ######
+  #### Computes the AIC of an EM algorithm implementation given a dataset
+  ######
+  
+  # Variable declaration
+  akaike_results = c()
+  
+  # Loops through each cluster parameter to compute the corresponding AIC
+  for (j in 2:max_cluster){
+    res = expectationMaximization(x, clusters=j, maxIterations = 50)
+    akaike_value = akaikeIC(res$sum_of_llh, j, dim(x)[2])
+    akaike_results = append(akaike_results, akaike_value)
+    print(paste("Total log-likelihood with ", j, " clusters: ", 
+                round(akaike_value, 3)))
+  }
+  
+  # Prints the result
+  print(paste("The best result is achieved with ", 
+              which.max(akaike_results)+1, 
+              " clusters."))
+}
+
 ```
 
 #### 2.5. Bayesian Information Criterion
@@ -393,23 +416,116 @@ bayesianIC <- function(logLikelihood, clusters, n, K) {
   return(logLikelihood - 1/2 * penalization * log(n))
 }
 
+computeBIC <- function(x, max_cluster=10){
+  ######
+  #### Computes the BIC of an EM algorithm implementation given a dataset
+  ######
+  
+  # Variable declaration
+  bayesian_results = c()
+  
+  # Loops through each cluster parameter to compute the corresponding AIC
+  for (j in 2:10){
+    res = expectationMaximization(x, clusters=j, maxIterations = 50)
+    bayesian_value = bayesianIC(res$sum_of_llh, j, dim(x)[1], dim(x)[2])
+    bayesian_results = append(bayesian_results, bayesian_value)
+    print(paste("Total log-likelihood with ", j, " clusters: ", 
+          round(bayesian_value, 3)))
+  }
+
+  # Prints the result
+  print(paste("The best result is achieved with ", 
+              which.max(bayesian_results)+1, 
+              " clusters."))
+}
+
 ```
 
 #### 2.6. (Cross-)Validated Likelihood
 
 ```{r}
 
-cvLikelihood <- function() {
+doubleCrossValidation <- function(x_train, x_test, folds=10, max_cluster=10) {
   ######
-  #### 
+  #### Implements a double cross-validation with the resulting log-likelihood
+  #### being the selection criteria.
   ######
   
   # Variable declaration
+  n_train = dim(x_train)[1]
+  fold_indexes = split(c(1:n_train), 
+                       ceiling(seq_along(c(1:n_train))/(n_train/10)))
+  mean_cluster_critera = c()
   
-  # 
+  # iterates over the cluster range
+  for (cl in 1:max_cluster){
+    # Performs the first step of the double cross-validation: iteration over the
+    # folds of the training set
+    llhs = c()
+    best_model = NULL
+    for (idx in fold_indexes){
+      x_train_train = x_train[-(fold_indexes$idx)] ############
+      x_train_val = x_train[fold_indexes$idx] ##################
+      results = expectationMaximization(x_train_train, clusters)
+      results = mostMatchingDistribution(
+        results$n_clusters, 
+        x_train_val, 
+        results$cl_proportions, 
+        results$cl_means, 
+        results$cl_sigma
+        )
+      # Records the resulting log-likelihood
+      sum_of_llhs = sum(results$likelihoods)
+      llhs = append(llhs, sum_of_llhs)
+      if (is.null(best_model) || sum_of_llhs == min(llhs)){
+        best_model = results
+      }
+    }
+    
+    # Computes the likelihood on the test set given the best achieved model
+    results = mostMatchingDistribution(
+        results$n_clusters, 
+        x_test, 
+        results$cl_proportions, 
+        results$cl_means, 
+        results$cl_sigma
+        )
+    llhs = append(llhs, sum(results$likelihoods))
+    
+    # Records the mean llhs achieved with the cluster
+    print(paste("Mean log-likelihood achieved with ", cl, " clusters: ",
+                round(mean(llhs),4)))
+    mean_cluster_critera = append(mean_cluster_critera, mean(llhs))
+  }
+  
+  # Finds which cluster had the best performance
+  best_cluster = which.max(mean_cluster_criteria)
+  print(paste("The best result is achieved with ", 
+            best_cluster+1, 
+            " clusters."))
+  # return statement
+  return(mean_cluster_critera)
+  
 }
 
 ```
+
+
+clusters = 2
+resultsEM_train = expectationMaximization(X_train, clusters)
+resultsKM_train = kMeans(X_train, clusters)
+
+
+Then we test our clustering results on the test dataset.
+
+test_resultsEM = mostMatchingDistribution(
+  resultsEM_train$n_clusters, 
+  X_test, 
+  resultsEM_train$cl_proportions, 
+  resultsEM_train$cl_means, 
+  resultsEM_train$cl_sigma
+  )
+
 
 # 3 - Comparing EM and K-Means
 
@@ -558,18 +674,7 @@ Starting with a cluster number of 2, we increase the number and check with diffe
 
 ```{r}
 
-akaike_results = c()
-for (j in 2:10){
-  res = expectationMaximization(X, clusters=j, maxIterations = 50)
-  akaike_value = akaikeIC(res$sum_of_llh, j, dim(X)[2])
-  akaike_results = append(akaike_results, akaike_value)
-  print(paste("Total log-likelihood with ", j, " clusters: ", 
-              round(akaike_value, 3)))
-}
-
-print(paste("The best result is achieved with ", 
-            which(akaike_results == max(akaike_results))+1, 
-            " clusters."))
+computeAIC(X)
 
 ```
 
@@ -577,18 +682,15 @@ print(paste("The best result is achieved with ",
 
 ```{r}
 
-bayesian_results = c()
-for (j in 2:10){
-  res = expectationMaximization(X, clusters=j, maxIterations = 50)
-  bayesian_value = bayesianIC(res$sum_of_llh, j, dim(X)[1], dim(X)[2])
-  bayesian_results = append(bayesian_results, bayesian_value)
-  print(paste("Total log-likelihood with ", j, " clusters: ", 
-        round(bayesian_value, 3)))
-}
+computeBIC(X)
 
-print(paste("The best result is achieved with ", 
-            which(bayesian_results == max(bayesian_results))+1, 
-            " clusters."))
 ```
 
 #### 4.3. Using Cross-Validated Likelihood
+
+We implement a double cross-validation with 10 folds and a maximum cluster parameter of 10.
+
+```{r}
+doubleCrossValidation(X_train, X_test) 
+```
+
