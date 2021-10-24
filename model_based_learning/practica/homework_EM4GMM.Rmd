@@ -71,7 +71,7 @@ We split the dataset, 2/3 for training and 1/3 for testing.
 ```{r}
 
 n = dim(X)[1]
-min_n_clusters = 2 #length(unique(y))
+min_n_clusters = length(unique(y))
 max_n_clusters = 10
 
 training_split = round(2/3*n,0)
@@ -185,9 +185,9 @@ expectationMaximization <- function(x, clusters, maxIterations=50) {
   n = dim(x)[1]
   K = dim(x)[2]
   prop = rep(1/clusters, clusters)
-  mu = rmvnorm(clusters, colMeans(x), cov(x))#mean=apply(x, K, mean), sigma=diag(K))
-  sigma = lapply(1:clusters, function(i) diag(K))
-
+  mu = rmvnorm(clusters, colMeans(x), cov(x))
+  sigma = lapply(1:clusters, function(i) cov(x))
+  
   # Algorithm loop
   for (loop in 1:maxIterations){
     
@@ -203,8 +203,8 @@ expectationMaximization <- function(x, clusters, maxIterations=50) {
       nk = sum(gam[,cl])
       # Parameter updates
       prop[cl] = nk/n
-      mu[cl,] = Reduce("+", lapply(1:n, function(i) gam[i,cl]*x[i,]))/nk
-      sigma[[cl]] = Reduce(
+      mu[cl,] <- Reduce("+", lapply(1:n, function(i) gam[i,cl]*x[i,]))/nk
+      sigma[[cl]] <- Reduce(
         "+",
         lapply(1:n,function(i) gam[i,cl]*(x[i,]-mu[cl,])%*%t(x[i,]-mu[cl,]))
         )/nk
@@ -361,7 +361,7 @@ computeAIC <- function(x, max_cluster=max_n_clusters, print_steps=TRUE){
   
   # Loops through each cluster parameter to compute the corresponding AIC
   for (j in min_n_clusters:max_cluster){
-    res = expectationMaximization(x, clusters=j, maxIterations = 50)
+    res = expectationMaximization(x, clusters=j)
     akaike_value = akaikeIC(res$sum_of_llh, j, dim(x)[2])
     akaike_results = append(akaike_results, akaike_value)
     if (print_steps) {
@@ -373,7 +373,7 @@ computeAIC <- function(x, max_cluster=max_n_clusters, print_steps=TRUE){
   # Prints the result
   print(paste("The best result is achieved with ", 
               which.max(akaike_results)+2, 
-              " clusters."))
+              " clusters (AIC)."))
 }
 
 ```
@@ -408,7 +408,7 @@ computeBIC <- function(x, max_cluster=max_n_clusters, print_steps=TRUE){
   
   # Loops through each cluster parameter to compute the corresponding AIC
   for (j in min_n_clusters:max_cluster){
-    res = expectationMaximization(x, clusters=j, maxIterations = 50)
+    res = expectationMaximization(x, clusters=j)
     bayesian_value = bayesianIC(res$sum_of_llh, j, dim(x)[1], dim(x)[2])
     bayesian_results = append(bayesian_results, bayesian_value)
     if (print_steps) {
@@ -420,7 +420,7 @@ computeBIC <- function(x, max_cluster=max_n_clusters, print_steps=TRUE){
   # Prints the result
   print(paste("The best result is achieved with ", 
               which.max(bayesian_results)+2, 
-              " clusters."))
+              " clusters (BIC)."))
 }
 
 ```
@@ -487,7 +487,7 @@ doubleCrossValidation <- function(x_train, x_test, folds=10, max_cluster=max_n_c
   best_cluster = which.max(mean_cluster_criteria)
   print(paste("The best result is achieved with ", 
             best_cluster+2, 
-            " clusters."))
+            " clusters (double CV)."))
   # return statement
   return(mean_cluster_criteria)
   
@@ -641,7 +641,7 @@ Sometimes, the K-Means ends up splitting the data points vertically rather than 
 
 # 4 - Performing Model Selection with the EM algorithm
 
-Starting with a cluster number of 2, we increase the number and check with different heuristics and criteria to select our best EM model.
+Starting with a cluster number of 3, we increase the number and check with different heuristics and criteria to select our best EM model.
 
 #### 4.1. Using the Akaike Information Criterion
 
@@ -679,13 +679,81 @@ We find that the Akaike Information Criterion is unstable compared to the Bayesi
 
 #### 5.1. Hand-selected features
 
+We decide to select the first 3 features in this first hand-selected testing of the EM algorithm with a high-dimensional dataset.
+
+```{r}
+
+Xhd = as.matrix(wine[,c(2:4)])
+
+```
+
+We compute the best cluster number for the dataset using the BIC.
+
+```{r}
+
+computeBIC(Xhd)
+
+```
+
+We find that the best results are obtained using 3 clusters with the high-dimensional dataset. Based on this, we try to apply the EM algorithm on a train split of the dataset and try to check the resulting clustering on a test dataset.
+
+```{r}
+
+# we reuse the randomized indexes computed in 1.4
+randomized_Xhd = Xhd[randomized_indexes,]
+randomized_yhd = y[randomized_indexes]
+Xhd_train = randomized_Xhd[1:training_split,]
+Xhd_test = randomized_Xhd[training_split:n,]
+yhd_train = randomized_yhd[1:training_split]
+yhd_test = randomized_yhd[training_split:n]
+
+resultsEMhd_train = expectationMaximization(Xhd_train, 3)
+
+test_resultsEMhd = mostMatchingDistribution(
+  3, 
+  Xhd_test, 
+  resultsEMhd_train$cl_proportions, 
+  resultsEMhd_train$cl_means, 
+  resultsEMhd_train$cl_sigma
+  )
+```
+Once done with the processing, we can visualize the resulting clustering on the test set by focusing on the two features we started with in this exercise:
+
+```{r}
+plot(Xhd_test[,c(1,3)], col=test_resultsEMhd$distributions+1, pch=19); points(resultsEMhd_train$cl_means[,c(1,3)], col=1, pch=10)
+```
+
+<u>Class Error:</u>
+
+```{r}
+classError(test_resultsEMhd$distributions, y_test)
+```
+
+
+<u>Adjusted Rand Index:</u>
+
+```{r}
+adjustedRandIndex(test_resultsEM$distributions, y_test)
+```
+
+<u>Comments and observations:</u>
+
+Going through multiple trials of the EM algorithm, we find that the clustering is less consistent when we use more dimension of the data. Sometimes, two clusters out of three (the best number of clusters found via AIC, BIC, and CV) will gobble the third, making the clustering on the test set rather unreliable.
+
+This is reflected in the higher error rate and lower adjusted rand index found in this section for the EM algorithm compared to the previous one.
+
 #### 5.2.1. Randomly selected features
 
 To test a number of different higher-dimension sets of features, we generate five 5-elements permutations allowed by the dataset (out of 27 feature columns). From this set of 5-permutations, we build the corresponding sets of 3-, and 4- sub-permutations.
 
-As such, our final selection of permutations would look something like:
+As such, the selection of permutations would look something like:
 
 - (a,b,c,d,e), (a,b,c,d), (a,b,c,e), (a,c,d,e), ..., (b,c,d), (c,d,e)
+
+i.e. 5 5-permutations, 600 4-permutations, 14400 3-permutations.
+
+Given this high number of permutations, we only randomly select 20 permutations out of the 4- and 3- permutations sets respectively. 
+
 
 ```{r}
 
@@ -742,15 +810,40 @@ three_perms = three_perms[!duplicated(apply(three_perms, 1, sort)),]
 
 ```
 
-#### 5.2.2. Computing the BIC for the 5-permutations
+#### 5.2.2. Computing the AIC and BIC for the 5-permutations
+
+We compute the best number of clusters via the use of the AIC and BIC with the following features of the wine dataset.
+
+of the wine dataset.
 
 ```{r}
-#for (perm in 1:nrow(five_perms)) {
-#  computeBIC(wine_features[perm,], print_steps = FALSE)
-#}
+for (perm in 1:nrow(five_perms)) {
+  cat("\nSelected features: ", paste(five_perms[perm,], collapse=", "), "\n")
+  computeAIC(as.matrix(wine_features[five_perms[perm,]]), print_steps=FALSE)
+}
 ```
 
-#### 5.2.3. Computing the BIC for the 4-permutations
+```{r}
+for (perm in 1:nrow(five_perms)) {
+  cat("\nSelected features: ", paste(five_perms[perm,], collapse=", "), "\n")
+  computeBIC(as.matrix(wine_features[five_perms[perm,]]), print_steps=FALSE)
+}
+```
 
-#### 5.2.4. Computing the BIC for the 3-permutations
+#### 5.2.3. Computing the AIC for the 4-permutations
 
+```{r}
+for (perm in sample(1:nrow(four_perms), 20)) {
+  cat("\nSelected features: ", paste(four_perms[perm,], collapse=", "), "\n")
+  computeAIC(as.matrix(wine_features[four_perms[perm,]]), print_steps=FALSE)
+}
+```
+
+#### 5.2.4. Computing the AIC for the 3-permutations
+
+```{r}
+for (perm in sample(1:nrow(three_perms), 20)) {
+  cat("\nSelected features: ", paste(three_perms[perm,], collapse=", "), "\n")
+  computeAIC(as.matrix(wine_features[three_perms[perm,]]), print_steps=FALSE)
+}
+```
