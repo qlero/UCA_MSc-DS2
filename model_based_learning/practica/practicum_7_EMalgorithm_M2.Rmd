@@ -1,0 +1,82 @@
+---
+title: "EM algorithm for handling missing data"
+author: "Aude Sportisse"
+date: "25/10/2021"
+output: html_document
+---
+
+# Code an EM algorithm
+
+We consider $X\sim \mathcal{N}(\mu,\Sigma)$, with
+    $$\mu=\begin{pmatrix} 5 \\ -1
+    \end{pmatrix} \textrm{ and } \Sigma=\begin{pmatrix} 1 & 0.5 \\ 0.5 & 1
+    \end{pmatrix}.$$ We want to introduce $r=30\%$ of missing values in the variable $X_2$. We consider that the missing-data mechanism is MCAR.
+    
+## Library imports
+
+```{r}
+
+library(mvtnorm)
+
+```
+
+## Distribution parameters
+```{r}
+
+mu = matrix(c(5, -1), nrow=1, ncol=2)
+sigma = matrix(c(1, 0.5, 0.5, 1), nrow=2, ncol=2)
+
+mu
+sigma
+
+```
+
+## Questions
+
+**Q1)** Generate a bivariate normal set of sample size $n=100$, with mean $\mu$ and covariance matrix $\Sigma$ (use the package mvtnorm).
+
+```{r}
+
+n = 100
+data = rmvnorm(n, mu, sigma)
+
+```
+
+**Q2)** Introduce MCAR missing values in $X_2$. 
+
+The goal is now to estimate the parameters $\mu$ and $\Sigma$ in presence of missing values in $X_2$ by using the EM algorithm.
+
+```{r}
+
+#p = 1/10
+#binomial_draws = rbinom(n, 1, p)
+#data[which(binomial_draws==1),2]=NA
+
+missing_idx.mcar <- sample.int(n, 0.3*n)
+data[missing_idx.mcar, 2] = NA
+
+```
+
+**Q3)** Propose a simple initialization for the EM algorithm. 
+
+```{r}
+
+```
+
+**Q4)** Write a function for the E-step and the M-step. 
+
+**Q5)** Use the EM algorithm for $50$ iterations to estimate $\mu$ and $\Sigma$. Show the results. 
+
+### Other questions
+
+**Q6)** Vary $n$ and the percentage of missing values $r$ and see what happens. 
+
+**Q7)** We have estimated the parameters $\mu$ and $\Sigma$, can we impute the missing values? Try it!
+
+**Q8)** Do you think the algorithm will still work for MNAR data? If you have the time, try it!
+
+**Q9)** How to stop the EM algorithm? (other than by giving a predefined number of steps) 
+
+
+
+
