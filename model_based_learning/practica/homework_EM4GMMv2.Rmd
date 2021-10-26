@@ -176,7 +176,7 @@ findCluster <- function(likelihoods) {
   return(clustering)
 }
 
-expectationMaximization <- function(x, clusters, maxIterations=50) {
+expectationMaximization <- function(x, clusters, maxIterations=1000) {
   ######
   #### Implementation of an Expectation Maximization algorithm for multivariate
   #### data, here the wine dataset provided by the pgmm library.
