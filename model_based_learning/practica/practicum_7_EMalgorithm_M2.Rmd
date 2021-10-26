@@ -53,13 +53,20 @@ The goal is now to estimate the parameters $\mu$ and $\Sigma$ in presence of mis
 #data[which(binomial_draws==1),2]=NA
 
 missing_idx.mcar <- sample.int(n, 0.3*n)
-data[missing_idx.mcar, 2] = NA
+X = data
+X[missing_idx.mcar, 2] = NA
 
 ```
 
 **Q3)** Propose a simple initialization for the EM algorithm. 
 
 ```{r}
+
+# We use the empirical mean and sigma
+
+mu_init = apply(X, 2, mean, na.rm=TRUE)
+sigma_init = cov(X, use="complete.obs")
+#sigma_init = var*X, na.rm=TRUE)
 
 ```
 

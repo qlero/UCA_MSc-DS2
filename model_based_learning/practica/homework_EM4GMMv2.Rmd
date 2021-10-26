@@ -139,7 +139,8 @@ logLikelihood <- function(n, clusters, x, prop, mu, sigma) {
   # Computes the gammas per clusters
     lgn = matrix(nrow=n, ncol=clusters)
     for (cl in 1:clusters){
-      lgn[,cl] = log(prop[cl]) + matrix(dmvnorm(x, mu[cl,], sigma[[cl]], log=TRUE))
+      lgn[,cl] = log(prop[cl]) + 
+        matrix(dmvnorm(x, mu[cl,], sigma[[cl]], log=TRUE)) # remove matrix?
     }
     
     # return statement
@@ -154,10 +155,10 @@ mostMatchingDistribution <- function(clusters, x, prop, mu, sigma){
   
   # Computes the likelihood of belonging to a distribution
   likelihoods = logLikelihood(dim(x)[1], clusters, x, prop, mu, sigma)
-  distributions = findCluster(likelihoods)
+  clustering = findCluster(likelihoods)
   
   # return statement
-  return(list("likelihoods" = likelihoods, "distributions" = distributions))
+  return(list("likelihoods" = likelihoods, "clustering" = clustering))
 }
 
 findCluster <- function(likelihoods) {
@@ -168,11 +169,11 @@ findCluster <- function(likelihoods) {
   ######
   
   # Computes the distribution to which each point belongs
-  distributions = (likelihoods == apply(likelihoods, 1, max))
-  distributions = apply(distributions, 1, which)
+  clustering = (likelihoods == apply(likelihoods, 1, max))
+  clustering = apply(clustering, 1, which)
   
   # Return statement
-  return(distributions)
+  return(clustering)
 }
 
 expectationMaximization <- function(x, clusters, maxIterations=50) {
@@ -181,9 +182,13 @@ expectationMaximization <- function(x, clusters, maxIterations=50) {
   #### data, here the wine dataset provided by the pgmm library.
   ######
   
+  ### TO CHECK WITH https://stackoverflow.com/questions/49834894/kmeans-results-as-initial-parameters-in-mclust
+  ### https://rpubs.com/H_Zhu/246450
+  
   # Variable declarations and initializations
   n = dim(x)[1]
   K = dim(x)[2]
+  store_LLH = -Inf
   prop = rep(1/clusters, clusters)
   mu = rmvnorm(clusters, colMeans(x), cov(x))
   sigma = lapply(1:clusters, function(i) cov(x))
@@ -191,42 +196,42 @@ expectationMaximization <- function(x, clusters, maxIterations=50) {
   # Algorithm loop
   for (loop in 1:maxIterations){
     
-    #### Expectation step
-    # Computes the new gamma values
+    #### Expectation step (with normalization step + logexp trick)
     LLH = logLikelihood(n, clusters, x, prop, mu, sigma)
-    LSE_LLH = apply(lgn, 1, logSumExp)
-    cat("Log-Likelihood at iteration ", loop, ": ", sum(LSE_LLH))
-    gam = LLH - LSE
+    sum_LLH = sum(apply(LLH, 1, logSumExp))
+    #if (sum(LLH) < store_LLH) {break} else {store_LLH = sum(LLH)}
+    gam = LLH - apply(LLH, 1, logSumExp)
     gam = exp(gam)
+    cat("\nStep ", loop, " LLH: ", sum_LLH)
     
     #### Maximization step
     for (cl in 1:clusters) {
       nk = sum(gam[,cl])
-      # Parameter updates
       prop[cl] = nk/n
-      mu[cl,] <- Reduce("+", lapply(1:n, function(i) gam[i,cl]*x[i,]))/nk
-      sigma[[cl]] <- Reduce(
-        "+",
-        lapply(1:n,function(i) gam[i,cl]*(x[i,]-mu[cl,])%*%t(x[i,]-mu[cl,]))
-        )/nk
+      mu[cl,] =
+        Reduce("+", lapply(1:n,function(i) 
+          gam[i,cl] * x[i,]))/nk
+      sigma[[cl]] =
+        Reduce("+",lapply(1:n,function(i) 
+          gam[i,cl] * (x[i,]-mu[cl,]) %*% t(x[i,]-mu[cl,])))/nk
     }
   }
   
   # Computes the llh results for the given data
   llh_results = mostMatchingDistribution(clusters, x, prop, mu, sigma)
-  lgn = sum(apply(lgn, 1, logSumExp))
+  llh_sum = sum(apply(llh_results$likelihoods, 1, logSumExp))
+  cat("\nEnd normalized log-likelihood: ", llh_sum)
   
   # return statement
   ret = list(
-    "n_wines" = n,
+    "N" = n,
     "n_clusters" = clusters,
-    "cl_gamma" = gam,
-    "cl_proportions" = prop,
-    "cl_means" = mu,
-    "cl_sigma" = sigma,
-    "distributions" = llh_results$distributions,
-    "logLikelihoods" = llh_results$likelihoods,
-    "sum_of_llh" = sum(llh_results$likelihoods)
+    "prop" = prop,
+    "means" = mu,
+    "Sigma" = sigma,
+    "clustering" = llh_results$clustering,
+    "llh" = llh_results$likelihoods,
+    "llh_sum" = llh_sum
     )
   return(ret)
 }
@@ -364,7 +369,7 @@ computeAIC <- function(x, max_cluster=max_n_clusters, print_steps=TRUE){
   # Loops through each cluster parameter to compute the corresponding AIC
   for (j in min_n_clusters:max_cluster){
     res = expectationMaximization(x, clusters=j)
-    akaike_value = akaikeIC(res$sum_of_llh, j, dim(x)[2])
+    akaike_value = akaikeIC(res$llh_sum, j, dim(x)[2])
     akaike_results = append(akaike_results, akaike_value)
     if (print_steps) {
       print(paste("Total log-likelihood with ", j, " clusters: ",
@@ -411,7 +416,7 @@ computeBIC <- function(x, max_cluster=max_n_clusters, print_steps=TRUE){
   # Loops through each cluster parameter to compute the corresponding AIC
   for (j in min_n_clusters:max_cluster){
     res = expectationMaximization(x, clusters=j)
-    bayesian_value = bayesianIC(res$sum_of_llh, j, dim(x)[1], dim(x)[2])
+    bayesian_value = bayesianIC(res$llh_sum, j, dim(x)[1], dim(x)[2])
     bayesian_results = append(bayesian_results, bayesian_value)
     if (print_steps) {
       print(paste("Total log-likelihood with ", j, " clusters: ", 
@@ -457,9 +462,9 @@ doubleCrossValidation <- function(x_train, x_test, folds=10, max_cluster=max_n_c
       matching_distribution = mostMatchingDistribution(
         resultsEM$n_clusters, 
         x_train_val, 
-        resultsEM$cl_proportions, 
-        resultsEM$cl_means, 
-        resultsEM$cl_sigma
+        resultsEM$prop, 
+        resultsEM$means, 
+        resultsEM$Sigma
         )
       # Records the resulting log-likelihood
       sum_of_llhs = sum(matching_distribution$likelihoods)
@@ -473,9 +478,9 @@ doubleCrossValidation <- function(x_train, x_test, folds=10, max_cluster=max_n_c
     matching_distribution = mostMatchingDistribution(
         best_model$n_clusters, 
         x_test,
-        best_model$cl_proportions, 
-        best_model$cl_means, 
-        best_model$cl_sigma
+        best_model$prop, 
+        best_model$means, 
+        best_model$Sigma
         )
     llhs = append(llhs, sum(matching_distribution$likelihoods))
     
@@ -514,8 +519,8 @@ resultsKM = kMeans(X, n_clusters)
 We display the final clustering for the EM algorithm:
 
 ```{r}
-plot(X, col=resultsEM$distributions+1, pch=19)
-points(resultsEM$cl_means, col=1, pch=10)
+plot(X, col=resultsEM$clustering+1, pch=19)
+points(resultsEM$means, col=1, pch=10)
 ```
 
 We display the final clustering for the K-Means algorithm:
@@ -541,9 +546,9 @@ Then we test our clustering results on the test dataset.
 test_resultsEM = mostMatchingDistribution(
   n_clusters, 
   X_test, 
-  resultsEM_train$cl_proportions, 
-  resultsEM_train$cl_means, 
-  resultsEM_train$cl_sigma
+  resultsEM_train$prop, 
+  resultsEM_train$means, 
+  resultsEM_train$Sigma
   )
 
 test_resultsKM = findClosestCentroids(
@@ -558,8 +563,8 @@ test_resultsKM$closest = apply(test_resultsKM$closest, 1, which)
 We display the final clustering for the EM algorithm:
 
 ```{r}
-plot(X_test, col=test_resultsEM$distributions+1, pch=19)
-points(resultsEM_train$cl_means, col=1, pch=10)
+plot(X_test, col=test_resultsEM$clustering+1, pch=19)
+points(resultsEM_train$means, col=1, pch=10)
 ```
 
 We display the final clustering for the K-Means algorithm:
@@ -578,7 +583,7 @@ Relying on the **mclust** library, we compute the [classError](https://mclust-or
 <u>Expectation-Maximization:</u>
 
 ```{r}
-classError(resultsEM$distributions, y)
+classError(resultsEM$clustering, y)
 ```
 
 <u>K-Means:</u>
@@ -593,7 +598,7 @@ classError(resultsKM$closest_centroid, y)
 <u>Expectation-Maximization:</u>
 
 ```{r}
-classError(test_resultsEM$distributions, y_test)
+classError(test_resultsEM$clustering, y_test)
 ```
 
 <u>K-Means:</u>
@@ -610,7 +615,7 @@ Relying on the **mclust** library, we compute the [Adjusted Rand Index](https://
 <u>Expectation-Maximization:</u>
 
 ```{r}
-adjustedRandIndex(resultsEM$distributions, y)
+adjustedRandIndex(resultsEM$clustering, y)
 ```
 
 <u>K-Means:</u>
@@ -625,7 +630,7 @@ adjustedRandIndex(resultsKM$closest_centroid, y)
 <u>Expectation-Maximization:</u>
 
 ```{r}
-adjustedRandIndex(test_resultsEM$distributions, y_test)
+adjustedRandIndex(test_resultsEM$clustering, y_test)
 ```
 
 <u>K-Means:</u>
@@ -714,28 +719,28 @@ resultsEMhd_train = expectationMaximization(Xhd_train, 3)
 test_resultsEMhd = mostMatchingDistribution(
   3, 
   Xhd_test, 
-  resultsEMhd_train$cl_proportions, 
-  resultsEMhd_train$cl_means, 
-  resultsEMhd_train$cl_sigma
+  resultsEMhd_train$prop, 
+  resultsEMhd_train$means, 
+  resultsEMhd_train$Sigma
   )
 ```
 Once done with the processing, we can visualize the resulting clustering on the test set by focusing on the two features we started with in this exercise:
 
 ```{r}
-plot(Xhd_test[,c(1,3)], col=test_resultsEMhd$distributions+1, pch=19); points(resultsEMhd_train$cl_means[,c(1,3)], col=1, pch=10)
+plot(Xhd_test[,c(1,3)], col=test_resultsEMhd$clustering+1, pch=19); points(resultsEMhd_train$means[,c(1,3)], col=1, pch=10)
 ```
 
 <u>Class Error:</u>
 
 ```{r}
-classError(test_resultsEMhd$distributions, y_test)
+classError(test_resultsEMhd$clustering, y_test)
 ```
 
 
 <u>Adjusted Rand Index:</u>
 
 ```{r}
-adjustedRandIndex(test_resultsEM$distributions, y_test)
+adjustedRandIndex(test_resultsEM$clustering, y_test)
 ```
 
 <u>Comments and observations:</u>
