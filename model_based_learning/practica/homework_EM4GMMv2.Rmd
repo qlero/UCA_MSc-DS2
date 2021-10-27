@@ -176,7 +176,7 @@ findCluster <- function(likelihoods) {
   return(clustering)
 }
 
-expectationMaximization <- function(x, clusters, maxIterations=1000) {
+expectationMaximization <- function(x, clusters, maxIterations=200) {
   ######
   #### Implementation of an Expectation Maximization algorithm for multivariate
   #### data, here the wine dataset provided by the pgmm library.
@@ -188,7 +188,9 @@ expectationMaximization <- function(x, clusters, maxIterations=1000) {
   # Variable declarations and initializations
   n = dim(x)[1]
   K = dim(x)[2]
-  store_LLH = -Inf
+  previous_LLH = -Inf
+  history_LLH = c()
+  counter = 0
   prop = rep(1/clusters, clusters)
   mu = rmvnorm(clusters, colMeans(x), cov(x))
   sigma = lapply(1:clusters, function(i) cov(x))
@@ -199,10 +201,21 @@ expectationMaximization <- function(x, clusters, maxIterations=1000) {
     #### Expectation step (with normalization step + logexp trick)
     LLH = logLikelihood(n, clusters, x, prop, mu, sigma)
     sum_LLH = sum(apply(LLH, 1, logSumExp))
-    #if (sum(LLH) < store_LLH) {break} else {store_LLH = sum(LLH)}
+    if (round(sum_LLH,4) <= round(previous_LLH,4)) {
+      counter = counter + 1
+      if (counter >= 5) {
+          cat("\nEarly stopping at iteration ", loop, ".")
+          break
+        }
+    } else {
+      counter = 0
+      previous_LLH = sum_LLH
+    }
+    #cat("\nStep ", loop, " LLH: ", sum_LLH)
+    history_LLH = append(history_LLH, sum_LLH)
+    
     gam = LLH - apply(LLH, 1, logSumExp)
     gam = exp(gam)
-    cat("\nStep ", loop, " LLH: ", sum_LLH)
     
     #### Maximization step
     for (cl in 1:clusters) {
@@ -220,7 +233,7 @@ expectationMaximization <- function(x, clusters, maxIterations=1000) {
   # Computes the llh results for the given data
   llh_results = mostMatchingDistribution(clusters, x, prop, mu, sigma)
   llh_sum = sum(apply(llh_results$likelihoods, 1, logSumExp))
-  cat("\nEnd normalized log-likelihood: ", llh_sum)
+  cat("\nEnd normalized log-likelihood: ", llh_sum, "\n")
   
   # return statement
   ret = list(
@@ -231,6 +244,7 @@ expectationMaximization <- function(x, clusters, maxIterations=1000) {
     "Sigma" = sigma,
     "clustering" = llh_results$clustering,
     "llh" = llh_results$likelihoods,
+    "llh_convergence" = history_LLH,
     "llh_sum" = llh_sum
     )
   return(ret)
@@ -301,7 +315,7 @@ findClosestCentroids <- function(x, centroids, clusters){
     
 }
 
-kMeans <- function(x, clusters, maxIterations=50) {
+kMeans <- function(x, clusters, maxIterations=200) {
   ######
   #### Implementation of a K-Means algorithm for multivariate data, here 
   #### the wine dataset provided by the pgmm library.
