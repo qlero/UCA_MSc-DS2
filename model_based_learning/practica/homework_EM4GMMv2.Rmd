@@ -317,11 +317,12 @@ expectationMaximization <- function(x, clusters, maxIterations=200, kmInit = F) 
   # Variables initialization: comparators, vectors for recording 
   #                           step values, etc.
   history_LLH = c()
-  history_prop = c(prop)
-  history_mu = c(mu)
-  history_sigma = c(sigma)
+  history_prop = c()
+  history_mu = c()
+  history_sigma = c()
   previous_LLH = -Inf
   counter = 0
+  loop_counter = 0
   
   ###########################
   ###### EM loop BEGIN ###### 
@@ -331,6 +332,8 @@ expectationMaximization <- function(x, clusters, maxIterations=200, kmInit = F) 
     ################################################
     #### E(xpectation)-Step (with logExp trick) ####
     ################################################
+    
+    loop_counter = loop_counter + 1
     
     # Computes log-likelihood of the setup at the start of the loop
     LLH = logLikelihood(n, clusters, x, prop, mu, sigma)
@@ -386,6 +389,11 @@ expectationMaximization <- function(x, clusters, maxIterations=200, kmInit = F) 
   llh_sum = sum(apply(llh_results$likelihoods, 1, logSumExp))
   cat("\nEnd log-likelihood: ", llh_sum, "\n")
   
+  # Formatting the record variables
+  history_prop = array(history_prop, c(loop_counter, clusters))
+  history_mu = array(history_mu, c(clusters, K, loop_counter))
+  history_sigma = array(history_sigma, c(clusters, K, K, loop_counter))
+  
   # return statement
   ret = list(
     "N" = n,
@@ -403,6 +411,7 @@ expectationMaximization <- function(x, clusters, maxIterations=200, kmInit = F) 
     )
   return(ret)
 }
+
 ```
 
 
@@ -421,7 +430,7 @@ akaikeIC <- function(llh, clusters, K) {
   llh - (clusters-1) + clusters*K + clusters*((K*(K+1))/2)
 }
 
-computeAIC <- function(x, max_cluster=max_n_clusters, print_steps=TRUE){
+computeAIC <- function(x, max_cluster=max_clusters, print_steps=TRUE){
   ######
   #### Computes the AIC of an EM algorithm implementation.
   ######
@@ -430,7 +439,7 @@ computeAIC <- function(x, max_cluster=max_n_clusters, print_steps=TRUE){
   akaike_results = c()
   
   # Loops through a cluster parameter range to compute the AIC
-  for (cl in min_n_clusters:max_cluster){
+  for (cl in min_clusters:max_cluster){
     EM = expectationMaximization(x, clusters=cl)
     akaike = akaikeIC(EM$llh_sum, cl, dim(x)[2])
     akaike_results = append(akaike_results, akaike)
@@ -466,7 +475,7 @@ bayesianIC <- function(llh, clusters, n, K) {
   llh - 1/2 * ((clusters-1) + clusters*K + clusters*((K*(K+1))/2)) * log(n)
 }
 
-computeBIC <- function(x, max_cluster=max_n_clusters, print_steps=TRUE){
+computeBIC <- function(x, max_cluster=max_clusters, print_steps=TRUE){
   ######
   #### Computes the BIC of an EM algorithm implementation.
   ######
@@ -475,7 +484,7 @@ computeBIC <- function(x, max_cluster=max_n_clusters, print_steps=TRUE){
   bayesian_results = c()
   
   # Loops through each cluster parameter to compute the corresponding AIC
-  for (cl in min_n_clusters:max_cluster){
+  for (cl in min_clusters:max_cluster){
     EM = expectationMaximization(x, clusters=cl)
     bayesian = bayesianIC(EM$llh_sum, cl, dim(x)[1], dim(x)[2])
     bayesian_results = append(bayesian_results, bayesian)
@@ -497,7 +506,7 @@ computeBIC <- function(x, max_cluster=max_n_clusters, print_steps=TRUE){
 
 ```{r}
 
-doubleCrossValidation <- function(x_train, x_test, folds=10, max_cl=max_n_clusters) {
+doubleCrossValidation <- function(x_train, x_test, folds=10, max_cl=max_clusters) {
   ######
   #### Implements a double cross-validation with the resulting log-likelihood
   #### being the selection criteria.
@@ -510,7 +519,7 @@ doubleCrossValidation <- function(x_train, x_test, folds=10, max_cl=max_n_cluste
   mean_cluster_criteria = c()
   
   # Iterates over the cluster range
-  for (cl in min_n_clusters:max_cl){
+  for (cl in min_clusters:max_cl){
     
     # Performs the first step of the double cross-validation: iteration
     # over the folds of the training set
@@ -584,15 +593,16 @@ We compute our results with the EM (with and without the K-Means initialization)
 ```{r}
 
 n_clusters = 3
-min_n_clusters = length(unique(y))
-max_n_clusters = 10
+min_clusters = length(unique(y))
+max_clusters = 10
 
-resultsEMwithoutKMinit = expectationMaximization(X, n_clusters)
+resultsEMwithoutKM = expectationMaximization(X, n_clusters)
 
 ```
+
 ```{r}
 
-resultsEMwithKMinit = expectationMaximization(X, n_clusters, kmInit=T)
+resultsEMwithKM = expectationMaximization(X, n_clusters, kmInit=T)
 
 ```
 
@@ -606,25 +616,27 @@ resultsKM = kMeans(X, n_clusters)
 We start with displaying the results of the clustering via a simple K-Means:
 
 ```{r}
+
 plot(X, col=resultsKM$closest_centroids + 1, pch=19)
 points(resultsKM$centroids, col=1, pch=10)
 title(main="Clustering obtained via K-Means")
+
 ```
 
 We display the final clustering for the EM algorithm (with and without KMeans):
 
 ```{r}
 
-plot(X, col=resultsEMwithoutKMinit$clustering+1, pch=19)
-points(resultsEMwithoutKMinit$means, col=1, pch=10)
+plot(X, col=resultsEMwithoutKM$clustering+1, pch=19)
+points(resultsEMwithoutKM$means, col=1, pch=10)
 title(main="Clustering obtained via EM (without K-Means init.)")
 
 ```
 
 ```{r}
 
-plot(X, col=resultsEMwithKMinit$clustering+1, pch=19)
-points(resultsEMwithKMinit$means, col=1, pch=10)
+plot(X, col=resultsEMwithKM$clustering+1, pch=19)
+points(resultsEMwithKM$means, col=1, pch=10)
 title(main="Clustering obtained via EM (with K-Means init.)")
 
 ```
@@ -636,7 +648,18 @@ We compute our results with the EM and K-Means algorithms on the training set.
 
 ```{r}
 
-resultsEM_train = expectationMaximization(X_train, n_clusters)
+resultsEM_train_withoutKM = expectationMaximization(X_train, n_clusters)
+
+```
+
+```{r}
+
+resultsEM_train_withKM = expectationMaximization(X_train, n_clusters, kmInit=T)
+
+```
+
+```{r}
+
 resultsKM_train = kMeans(X_train, n_clusters)
 
 ```
@@ -644,12 +667,21 @@ resultsKM_train = kMeans(X_train, n_clusters)
 Then we test our clustering results on the test dataset.
 
 ```{r}
-test_resultsEM = mostMatchingDistribution(
+
+test_resultsEM_withoutKM = mostMatchingDistribution(
   n_clusters, 
   X_test, 
-  resultsEM_train$prop, 
-  resultsEM_train$means, 
-  resultsEM_train$sigma
+  resultsEM_train_withoutKM$prop, 
+  resultsEM_train_withoutKM$means, 
+  resultsEM_train_withoutKM$sigma
+  )
+
+test_resultsEM_withKM = mostMatchingDistribution(
+  n_clusters, 
+  X_test, 
+  resultsEM_train_withKM$prop, 
+  resultsEM_train_withKM$means, 
+  resultsEM_train_withKM$sigma
   )
 
 test_resultsKM = findClosestCentroids(
@@ -657,22 +689,36 @@ test_resultsKM = findClosestCentroids(
   resultsKM_train$centroids,
   n_clusters
   )
-
 test_resultsKM$closest = apply(test_resultsKM$closest, 1, which)
+
 ```
 
-We display the final clustering for the EM algorithm:
+We display the final clustering for the EM algorithm (with and without KMeans):
 
 ```{r}
-plot(X_test, col=test_resultsEM$clustering+1, pch=19)
-points(resultsEM_train$means, col=1, pch=10)
+
+plot(X, col=resultsEM_train_withoutKM$clustering+1, pch=19)
+points(resultsEM_train_withoutKM$means, col=1, pch=10)
+title(main="Test set clustering obtained via EM (without K-Means init.)")
+
 ```
+
+```{r}
+
+plot(X, col=resultsEM_train_withKM$clustering+1, pch=19)
+points(resultsEM_train_withKM$means, col=1, pch=10)
+title(main="Test set clustering obtained via EM (with K-Means init.)")
+
+```
+
 
 We display the final clustering for the K-Means algorithm:
 
 ```{r}
+
 plot(X_test, col=test_resultsKM$closest+1, pch=19)
 points(resultsKM_train$centroids, col=1, pch=10)
+
 ```
 
 Relying on the **mclust** library, we compute the classError and adjustedRandIndex to assess the quality of our clustering.
@@ -683,14 +729,28 @@ Relying on the **mclust** library, we compute the [classError](https://mclust-or
 
 <u>Expectation-Maximization:</u>
 
+For the case with a random initialization:
+
 ```{r}
-classError(resultsEM$clustering, y)
+
+classError(resultsEMwithoutKM$clustering, y)
+
+```
+
+For the case with a k-means initialization:
+
+```{r}
+
+classError(resultsEMwithKM$clustering, y)
+
 ```
 
 <u>K-Means:</u>
 
 ```{r}
+
 classError(resultsKM$closest_centroid, y)
+
 ```
 
 
@@ -698,14 +758,28 @@ classError(resultsKM$closest_centroid, y)
 
 <u>Expectation-Maximization:</u>
 
+For the case with a random initialization:
+
 ```{r}
-classError(test_resultsEM$clustering, y_test)
+
+classError(test_resultsEM_withoutKM$clustering, y_test)
+
+```
+
+For the case with a k-means initialization:
+
+```{r}
+
+classError(test_resultsEM_withKM$clustering, y_test)
+
 ```
 
 <u>K-Means:</u>
 
 ```{r}
+
 classError(test_resultsKM$closest, y_test)
+
 ```
 
 
@@ -715,14 +789,28 @@ Relying on the **mclust** library, we compute the [Adjusted Rand Index](https://
 
 <u>Expectation-Maximization:</u>
 
+For the case with a random initialization:
+
 ```{r}
-adjustedRandIndex(resultsEM$clustering, y)
+
+adjustedRandIndex(resultsEMwithoutKM$clustering, y)
+
+```
+
+For the case with a k-means initialization:
+
+```{r}
+
+adjustedRandIndex(resultsEMwithKM$clustering, y)
+
 ```
 
 <u>K-Means:</u>
 
 ```{r}
+
 adjustedRandIndex(resultsKM$closest_centroid, y)
+
 ```
 
 
@@ -730,26 +818,54 @@ adjustedRandIndex(resultsKM$closest_centroid, y)
 
 <u>Expectation-Maximization:</u>
 
+For the case with a random initialization:
+
 ```{r}
-adjustedRandIndex(test_resultsEM$clustering, y_test)
+
+adjustedRandIndex(test_resultsEM_withoutKM$clustering, y_test)
+
+```
+
+For the case with a k-means initialization:
+
+```{r}
+
+adjustedRandIndex(test_resultsEM_withKM$clustering, y_test)
+
 ```
 
 <u>K-Means:</u>
 
 ```{r}
-adjustedRandIndex(test_resultsKM$closest, y_test)
-```
 
+adjustedRandIndex(test_resultsKM$closest, y_test)
+
+```
 
 #### 3.4. Comments and observations
 
-When re-knitting/running the R markdown, it happens that, *in general*, the EM algorithm performs better than the K-Means (rarely, the reverse happens, which seems to be tied to the initialization of the centroids/parameters).
+In general, we observe that the EM algorithm performs better than the K-Means algorithm. Furthermore we observe that in general, a random initialization performs bettern than a k-means initialization for the EM algorithm. As the K-Means provides somewhat already optimized centroids, the algorithm does not seem to update as efficiently as the random initialization on the two selected features, given the same number of iterations. However, we still observe that the EM algorithm improves on the performance of the K-Means alone.
 
-Sometimes, the K-Means ends up splitting the data points vertically rather than horizontally (this case results in the K-Means performing better than the EM algorithm.)
+These observations are highlighted by our metrics (class error and adjusted rand error) where the EM algorithm obtains better results (lower class error and higher adjusted rand index) compared to the KM.
+
+<u>Example of metrics obtained on October 29th:</u>
+
+| algorithm | class error | adjusted rand index |
+| --- | --- | --- |
+| EM (full dataset, random init.) | 0.29 | 0.33 |
+| EM (full dataset, KM init.) | 0.48 | 0.16 |
+| EM (test dataset, random init.) | **0.25** | **0.37** |
+| EM (test dataset, KM init.) | 0.46 | 0.18 |
+| KM (full dataset) | 0.49 | 0.15 |
+| KM (test dataset) | 0.48 | 0.18 |
+
+Another minor observation is that, rarely, the K-Means ends up splitting the data points vertically rather than horizontally.
 
 # 4 - Performing Model Selection with the EM algorithm
 
-Starting with a cluster number of 3, we increase the number and check with different heuristics and criteria to select our best EM model.
+Starting with a cluster number of 3 (we know as the number of types of wine in the dataset), we increase the cluster parameter and check with different heuristics and criteria to select the best EM model.
+
+Given our previous result, we use the case with a random initialization to compute our criteria.
 
 #### 4.1. Using the Akaike Information Criterion
 
@@ -759,7 +875,6 @@ computeAIC(X)
 
 ```
 
-
 #### 4.2. Using the Bayesian Information Criterion
 
 ```{r}
@@ -768,14 +883,15 @@ computeBIC(X)
 
 ```
 
-
 #### 4.3. Using Cross-Validated Likelihood
 
 We implement a double cross-validation with 10 folds and a maximum cluster parameter of 10.
 
 
 ```{r}
+
 cv_logLikelihoods = doubleCrossValidation(X_train, X_test) 
+
 ```
 
 
