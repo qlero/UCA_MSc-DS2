@@ -34,8 +34,9 @@ The goal is to implement the Expectation-Maximization algorithm from scratch for
 # install.packages("pgmm")
 # install.packages('mvtnorm')
 # install.packages('mclust')
+# install.packages('ggplot2')
 
-library(pgmm); library(mvtnorm); library(mclust)
+library(pgmm); library(mvtnorm); library(mclust); library(ggplot2)
 
 ```
 
@@ -225,7 +226,7 @@ mostMatchingDistribution <- function(clusters, x, prop, mu, sigma){
 ```
 
 
-#### 2.3. K-Means Algorithm
+#### 2.2. K-Means Algorithm
 
 We implement the K-Means algorithm from scratch.
 
@@ -291,15 +292,21 @@ We implement the EM algorithm for multivariate data from scratch.
 
 ```{r}
 
-expectationMaximization <- function(x, clusters, maxIterations=200, kmInit = F) {
+expectationMaximization <- function(
+  x, clusters, 
+  maxIterations=200, kmInit = F,
+  printMessage=T
+) {
   ######
   #### Implementation of a multivariate EM algorithm.
   ######
   
-  if (kmInit) {
-    cat("Processing EM with", clusters, "cluster(s), KM initialization.")
-  } else {
-    cat("Processing EM with", clusters, "cluster(s), random initialization.")
+  if (printMessage) {
+    if (kmInit) {
+      cat("Processing EM with", clusters, "cluster(s), KM initialization.")
+    } else {
+      cat("Processing EM with", clusters, "cluster(s), random initialization.")
+    }
   }
   
   # Variables initialization: dimensions of the input dataset
@@ -343,7 +350,10 @@ expectationMaximization <- function(x, clusters, maxIterations=200, kmInit = F) 
     # Criterion: no update for 5 loops (with llh rounded to 4 decimals)
     if (round(sum_LLH,4) <= round(previous_LLH,4)) {
       counter = counter + 1
-      if (counter >= 5) {cat("\nEarly stopping at loop:", loop); break}
+      if (counter >= 5) {
+        if (printMessage) {cat("\nEarly stopping at loop:", loop)}
+        break
+      }
     } else {counter = 0; previous_LLH = sum_LLH}
     
     # Records the current LLH (plotting purposes)
@@ -387,7 +397,7 @@ expectationMaximization <- function(x, clusters, maxIterations=200, kmInit = F) 
   # Computes the log-likelihood results for the given dataset
   llh_results = mostMatchingDistribution(clusters, x, prop, mu, sigma)
   llh_sum = sum(apply(llh_results$likelihoods, 1, logSumExp))
-  cat("\nEnd log-likelihood: ", llh_sum, "\n")
+  if (printMessage) {cat("\nEnd log-likelihood: ", llh_sum, "\n")}
   
   # Formatting the record variables
   history_prop = array(history_prop, c(loop_counter, clusters))
@@ -440,7 +450,7 @@ computeAIC <- function(x, max_cluster=max_clusters, print_steps=TRUE){
   
   # Loops through a cluster parameter range to compute the AIC
   for (cl in min_clusters:max_cluster){
-    EM = expectationMaximization(x, clusters=cl)
+    EM = expectationMaximization(x, clusters=cl, printMessage=F)
     akaike = akaikeIC(EM$llh_sum, cl, dim(x)[2])
     akaike_results = append(akaike_results, akaike)
     if (print_steps) {
@@ -485,7 +495,7 @@ computeBIC <- function(x, max_cluster=max_clusters, print_steps=TRUE){
   
   # Loops through each cluster parameter to compute the corresponding AIC
   for (cl in min_clusters:max_cluster){
-    EM = expectationMaximization(x, clusters=cl)
+    EM = expectationMaximization(x, clusters=cl, printMessage=F)
     bayesian = bayesianIC(EM$llh_sum, cl, dim(x)[1], dim(x)[2])
     bayesian_results = append(bayesian_results, bayesian)
     if (print_steps) {
@@ -534,7 +544,7 @@ doubleCrossValidation <- function(x_train, x_test, folds=10, max_cl=max_clusters
       x_train_val = x_train[kFold,]
       
       # Computes the EM (on the training set)
-      EM = expectationMaximization(x_train_train, cl)
+      EM = expectationMaximization(x_train_train, cl, printMessage=F)
       
       # Retrieves the resulting llhs/distributions on the validation set
       dists = mostMatchingDistribution(
@@ -583,6 +593,42 @@ doubleCrossValidation <- function(x_train, x_test, folds=10, max_cl=max_clusters
 
 ```
 
+#### 2.7. ggplot2 plotting
+
+```{r}
+
+plotData <- function(
+  x, clustering, mean_clusters,
+  t="K-Means", xl="Alcohol", yl="Fixed Acidity"
+) {
+  ######
+  #### Plots a cloud of point with clustering ellipses.
+  #####
+  
+  # Formats the input data as a dataframe
+  df = data.frame(x)
+  mean_clusters = data.frame(mean_clusters)
+  names(mean_clusters) = names(df)
+  
+  # Formats the clustering labels as factors for coloring
+  colors = as.factor(clustering)
+  
+  # Declares the plot
+  p = ggplot(df, aes_string(names(df)[1], names(df)[2], color=colors)) + 
+    geom_point() +
+    stat_ellipse(geom="polygon", aes(fill=colors), alpha=0.05) + 
+    guides(fill = "none") + 
+    labs(color="Wine Type", 
+         title=paste("Clustering obtained via", t), 
+         x=xl,y=yl) + 
+    geom_point(data=mean_clusters, color="black")
+  
+  # return statement 
+  return(p)
+}
+
+```
+
 
 # 3 - Comparing EM and K-Means
 
@@ -617,9 +663,12 @@ We start with displaying the results of the clustering via a simple K-Means:
 
 ```{r}
 
-plot(X, col=resultsKM$closest_centroids + 1, pch=19)
-points(resultsKM$centroids, col=1, pch=10)
-title(main="Clustering obtained via K-Means")
+# non-ggplot implementation without ellipses
+# plot(X, col=resultsKM$closest_centroids + 1, pch=19)
+# points(resultsKM$centroids, col=1, pch=10)
+# title(main="Clustering obtained via K-Means")
+
+plotData(X, resultsKM$closest_centroids, resultsKM$centroids)
 
 ```
 
@@ -627,17 +676,25 @@ We display the final clustering for the EM algorithm (with and without KMeans):
 
 ```{r}
 
-plot(X, col=resultsEMwithoutKM$clustering+1, pch=19)
-points(resultsEMwithoutKM$means, col=1, pch=10)
-title(main="Clustering obtained via EM (without K-Means init.)")
+# non-ggplot implementation without ellipses
+# plot(X, col=resultsEMwithoutKM$clustering+1, pch=19)
+# points(resultsEMwithoutKM$means, col=1, pch=10)
+# title(main="Clustering obtained via EM (without K-Means init.)")
+
+plotData(X, resultsEMwithoutKM$clustering, resultsEMwithoutKM$means,
+         t="EM (without K-Means init.)")
 
 ```
 
 ```{r}
 
-plot(X, col=resultsEMwithKM$clustering+1, pch=19)
-points(resultsEMwithKM$means, col=1, pch=10)
-title(main="Clustering obtained via EM (with K-Means init.)")
+# non-ggplot implementation without ellipses
+# plot(X, col=resultsEMwithKM$clustering+1, pch=19)
+# points(resultsEMwithKM$means, col=1, pch=10)
+# title(main="Clustering obtained via EM (with K-Means init.)")
+
+plotData(X, resultsEMwithKM$clustering, resultsEMwithKM$means, 
+         t="EM (with K-Means init.)")
 
 ```
 
@@ -697,17 +754,27 @@ We display the final clustering for the EM algorithm (with and without KMeans):
 
 ```{r}
 
-plot(X, col=resultsEM_train_withoutKM$clustering+1, pch=19)
-points(resultsEM_train_withoutKM$means, col=1, pch=10)
-title(main="Test set clustering obtained via EM (without K-Means init.)")
+# non-ggplot implementation without ellipses
+# plot(X_test, col=test_resultsEM_withoutKM$clustering+1, pch=19)
+# points(resultsEM_train_withoutKM$means, col=1, pch=10)
+# title(main="Test set clustering obtained via EM (without K-Means init.)")
+
+plotData(X_test, test_resultsEM_withoutKM$clustering, 
+         resultsEM_train_withoutKM$means, 
+         t="EM, test set, (without K-Means init.)")
 
 ```
 
 ```{r}
 
-plot(X, col=resultsEM_train_withKM$clustering+1, pch=19)
-points(resultsEM_train_withKM$means, col=1, pch=10)
-title(main="Test set clustering obtained via EM (with K-Means init.)")
+# non-ggplot implementation without ellipses
+# plot(X_test, col=test_resultsEM_withKM$clustering+1, pch=19)
+# points(resultsEM_train_withKM$means, col=1, pch=10)
+# title(main="Test set clustering obtained via EM (with K-Means init.)")
+
+plotData(X_test, test_resultsEM_withKM$clustering, 
+         resultsEM_train_withKM$means, 
+         t="EM, test set, (with K-Means init.)")
 
 ```
 
@@ -716,8 +783,12 @@ We display the final clustering for the K-Means algorithm:
 
 ```{r}
 
-plot(X_test, col=test_resultsKM$closest+1, pch=19)
-points(resultsKM_train$centroids, col=1, pch=10)
+# non-ggplot implementation without ellipses
+# plot(X_test, col=test_resultsKM$closest+1, pch=19)
+# points(resultsKM_train$centroids, col=1, pch=10)
+
+plotData(X_test, test_resultsKM$closest, resultsKM_train$centroids, 
+         t="K-Means, test set")
 
 ```
 
@@ -940,24 +1011,37 @@ test_resultsEMhd = mostMatchingDistribution(
   resultsEMhd_train$means, 
   resultsEMhd_train$sigma
   )
+
 ```
 Once done with the processing, we can visualize the resulting clustering on the test set by focusing on the two features we started with in this exercise:
 
 ```{r}
-plot(Xhd_test[,c(1,3)], col=test_resultsEMhd$clustering+1, pch=19); points(resultsEMhd_train$means[,c(1,3)], col=1, pch=10)
+
+# non-ggplot implementation without ellipses
+# plot(Xhd_test[,c(1,3)], col=test_resultsEMhd$clustering+1, pch=19)
+# points(resultsEMhd_train$means[,c(1,3)], col=1, pch=10)
+
+plotData(Xhd_test[,c(1,3)], test_resultsEMhd$clustering, 
+         resultsEMhd_train$means[,c(1,3)], 
+         t="EM, test set, (without K-Means init.)")
+
 ```
 
 <u>Class Error:</u>
 
 ```{r}
+
 classError(test_resultsEMhd$clustering, y_test)
+
 ```
 
 
 <u>Adjusted Rand Index:</u>
 
 ```{r}
-adjustedRandIndex(test_resultsEM$clustering, y_test)
+
+adjustedRandIndex(test_resultsEMhd$clustering, y_test)
+
 ```
 
 <u>Comments and observations:</u>
@@ -1022,6 +1106,7 @@ for (p in 1:nrow(four_perms)) {
   }
 }
 three_perms = as.matrix(three_perms)
+
 ```
 
 We remove the duplicated permutations:
@@ -1041,33 +1126,41 @@ We compute the best number of clusters via the use of the AIC and BIC with the f
 of the wine dataset.
 
 ```{r}
+
 for (perm in 1:nrow(five_perms)) {
   cat("\nSelected features: ", paste(five_perms[perm,], collapse=", "), "\n")
   computeAIC(as.matrix(wine_features[five_perms[perm,]]), print_steps=FALSE)
 }
+
 ```
 
 ```{r}
+
 for (perm in 1:nrow(five_perms)) {
   cat("\nSelected features: ", paste(five_perms[perm,], collapse=", "), "\n")
   computeBIC(as.matrix(wine_features[five_perms[perm,]]), print_steps=FALSE)
 }
+
 ```
 
-#### 5.2.3. Computing the AIC for the 4-permutations
+#### 5.2.3. Computing the BIC for the 4-permutations
 
 ```{r}
+
 for (perm in sample(1:nrow(four_perms), 20)) {
   cat("\nSelected features: ", paste(four_perms[perm,], collapse=", "), "\n")
-  computeAIC(as.matrix(wine_features[four_perms[perm,]]), print_steps=FALSE)
+  computeBIC(as.matrix(wine_features[four_perms[perm,]]), print_steps=FALSE)
 }
+
 ```
 
-#### 5.2.4. Computing the AIC for the 3-permutations
+#### 5.2.4. Computing the BIC for the 3-permutations
 
 ```{r}
+
 for (perm in sample(1:nrow(three_perms), 20)) {
   cat("\nSelected features: ", paste(three_perms[perm,], collapse=", "), "\n")
-  computeAIC(as.matrix(wine_features[three_perms[perm,]]), print_steps=FALSE)
+  computeBIC(as.matrix(wine_features[three_perms[perm,]]), print_steps=FALSE)
 }
+
 ```
