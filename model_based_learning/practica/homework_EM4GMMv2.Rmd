@@ -1,27 +1,71 @@
 ---
-title: "Tutorial Expectation-Maximization for Gaussian Mixture Models"
+title: "From Scratch Implementation of the Expectation-Maximization Algorithm for Multivariate Gaussian Mixture Models"
 output:
   html_document:
     df_print: paged
 ---
   
-The goal is to implement the Expectation-Maximization algorithm from scratch for a multivariate Gaussian Mixture Model case. The pgmm package's Wine dataset is used as a test case example.
+The following R-markdown implements an Expectation-Maximization algorithm from scratch in the case of a multivariate Gaussian Mixture Model.
+
+The pgmm package's Wine dataset is used as a test case example.
 
 ### Implementation steps
 
-1) **Implementing the basic algorithm with a bivariate example**
+1) **Implementation of the EM algorithm with a basic bivariate example**
 
-- Implement the EM algorithm from scratch for a GMM on the variables 2 and 4 of the Wine dataset.
-- Cluster the data and compare the results with a K-Means algorithm
-- Assess the quality of the clustering (the function classError and/or adjustedRandIndex from the mclust package will be used)
+  - Implement the EM algorithm from scratch for a GMM on the variables 2 and 4 of the Wine dataset.
+  - Cluster the data and compare the results with a K-Means algorithm.
+  - Assess the quality of the clustering (the function classError and/or adjustedRandIndex from the mclust package will be used).
 
-2) **Model selection**
+2) **Performing a model selection**
 
-- Find a relevant number of clusters using three criterion methods: AIC, BIC, and (cross-)validated likelihood.
+  - Find a relevant number of clusters using three criterion methods: AIC, BIC, and cross-validated likelihood.
+  
+***Note***: *A double cross-validation will be used*.
 
 3) **Towards higher dimensional spaces**
 
-- Model more than two variables (from the Wine dataset). Do we find the same clusters, the same number of clusters?
+  - Model more than two variables (from the Wine dataset). 
+  - Comment on the resulting clusters, their number, etc.
+
+<hr>
+
+***Notes on known issues***:
+
+- **Error** -- Assymetric matrix error:
+
+> This error may occurs on ``computeBIC`` or ``expectationMaximization`` calls for instance
+>
+> The functions may crash due to the randomized aspect of the algorithm process resulting in an asymmetric matrix (This happens when a cluster is computed to only contain a single datapoint)
+> 
+> <u>Error message</u>: (max(abs(sigma - t(sigma))) > sqrt(.Machine$double.eps)) stop("sigma must be a symmetric matrix") : missing value where TRUE/FALSE needed
+
+- **Error** -- EM random initialization fail:
+
+> This error occurs on ``expectationMaximization``
+>
+> Sometimes the random initialization of the ``expectationMaximization`` function fails
+> 
+> <u>Error message</u>: Error in FUN(X[[i]], ...) : 'dimnames' applied to non-array
+
+- **Error** -- Crash whe editing the code while running a chunk
+
+> Knitting or running a chunk may crash with the error below in the RStudio environment if the user edits the Rmd document (even without saving, even if only the mardown areas are updated). It is advised not to interact with the editing environment while running any code.
+>
+> <u>Error message</u>: Error in FUN(X[[i]], ...) : object[[i]] not found
+
+- **Warning** -- Overwritten methods by conflicting packages:
+
+> This warning may occur on the ``computeAIC`` and ``computeBIC`` calls for instance
+> 
+> This is caused when multiple packages have the same named function.
+>
+> <u>Warning message</u>: 
+  Registered S3 methods overwritten by 'htmltools':
+  method               from         
+  print.html           tools:rstudio
+  print.shiny.tag      tools:rstudio
+  print.shiny.tag.list tools:rstudio
 
 <hr>
 
@@ -42,7 +86,7 @@ library(pgmm); library(mvtnorm); library(mclust); library(ggplot2)
 
 ### 1.2. Dataset import
 
-Once the packages are imported, the dataset is loaded into the R environment.
+Once the packages are imported, the dataset is loaded in the R environment.
 ```{r}
 
 data(wine)
@@ -50,8 +94,7 @@ head(wine)
 
 ```
 
-The variables 2 and 4 of the Wine dataset are extracted (of note, they will correspond to our bivariate features).
-The labels of each entry are also extracted.
+The variables 2 and 4 of the Wine dataset are extracted -- they will form our features for the first part of the implementation. The labels of each entry are also extracted (variable 1 of the Wine dataset).
 
 ```{r}
 
@@ -62,12 +105,12 @@ y = wine$Type
 
 #### 1.3. Dataset check
 
-We check the shape and content of the features we pre-selected.
+We check the shape and content of the features we selected.
 
 ```{r}
 
 print(paste("Feature dimensions: ", paste(dim(X), collapse= ", ")))
-print(paste("feature names: ", paste(colnames(X), collapse=", ")))
+print(paste("Feature names: ", paste(colnames(X), collapse=", ")))
 
 ```
 
@@ -75,39 +118,43 @@ print(paste("feature names: ", paste(colnames(X), collapse=", ")))
 
 ```{r}
 
-plot(X, col = y+1, pch=19)
+plot(X, col=y+1, pch=19)
 
 ```
 
 #### 1.4. Train/Test Split
 
-As part of our next step, we need to split our dataset between training and testing sets. To this effect, we choose a $\frac{2}{3}$ split for training and $\frac{1}{3}$ split for testing. The split is done at random via a randomized sample of the feature array's indexes.
+Beyond clustering the whole dataset, we are also interested in the performance of our algorithm. 
+
+To properly assess the resulting clusterings that will be performed below, we split the dataset between training and testing sets. 
+
+To this effect, we choose a $0.7$ split for training and $0.3$ split for testing. This is informed by it being the standard split in the AI field for small datasets. The split is done via randomizing the dataset order and splitting at the $0.7/0.3$ threshold.
+
+**Note**: *Going lower in terms of split (e.g. 0.66.../0.33..) starts yielding an increasing number of errors. This might be related to the splits not providing enough items to the train set to compute working parameters (e.g. means, variance, etc.) This has not been tested/resolved fully, however. R traceback was not very helpful. If an error occurs involving a wrongly-dimensioned matrix, re-knit/rerun. Clearing the environment in RStudio might also help*.
 
 ```{r}
 
-n = dim(X)[1]
-
-training_split = round(2/3*n,0)
-
+# We randomize the dataset via its index
 randomized_indexes = sample(1:nrow(X))
 randomized_X = X[randomized_indexes,]
 randomized_y = y[randomized_indexes]
 
+
+n = dim(X)[1]
+training_split = round(0.7*n,0)
+
 X_train = randomized_X[1:training_split,]
-X_test = randomized_X[training_split:n,]
+X_test = randomized_X[(training_split+1):n,]
 y_train = randomized_y[1:training_split]
-y_test = randomized_y[training_split:n]
+y_test = randomized_y[(training_split+1):n]
 
 ```
 
-
 # 2 - Function declarations
 
-In this section we declare our multivariate EM algorithm along with a K-Means algorithm and other sets of functions to help in the process.
+The following section is used to declare all of the R-markdown functions along with the implementations (from scratch) of the multivariate EM algorithm and the K-Means algorithm. Functions are declared in alphabetical order.
 
 #### 2.1. Generic functions
-
-Functions are declared in alphabetical order.
 
 ```{r}
 
@@ -225,10 +272,7 @@ mostMatchingDistribution <- function(clusters, x, prop, mu, sigma){
 
 ```
 
-
-#### 2.2. K-Means Algorithm
-
-We implement the K-Means algorithm from scratch.
+#### 2.2. K-Means Algorithm (from scratch)
 
 ```{r}
 
@@ -259,7 +303,14 @@ kMeans <- function(x, clusters, maxIterations=200, printMessage=T) {
     # Updates the closest centroids
     centroids = c()
     for (cl in 1:clusters) {
-      centroids = rbind(centroids, colMeans(x[closest_centroids$closest[,cl],]))
+      # checks on the length of the cluster split as colMeans crashes if
+      # x[closest_centroids$closest[,cl],]  is a single datapoint
+      if (length(x[closest_centroids$closest[,cl],])==2) {
+        column_means = x[closest_centroids$closest[,cl],] 
+      } else {
+        column_means = colMeans(x[closest_centroids$closest[,cl],])
+      }
+      centroids = rbind(centroids, column_means)
     }
     
     # Erases the matrix's columns and rows names inherited from the dataset
@@ -285,17 +336,13 @@ kMeans <- function(x, clusters, maxIterations=200, printMessage=T) {
 
 ```
 
-
-#### 2.3. Expectation-Maximization algorithm 
-
-We implement the EM algorithm for multivariate data from scratch.
+#### 2.3. Expectation-Maximization Algorithm (from scratch)
 
 ```{r}
 
 expectationMaximization <- function(
   x, clusters, 
-  maxIterations=200, kmInit = F,
-  printMessage=T
+  maxIterations=200, kmInit = F, printMessage=T
 ) {
   ######
   #### Implementation of a multivariate EM algorithm.
@@ -424,7 +471,6 @@ expectationMaximization <- function(
 
 ```
 
-
 #### 2.4. Akaike Information Criterion
 
 ```{r}
@@ -465,7 +511,6 @@ computeAIC <- function(x, max_cluster=max_clusters, print_steps=TRUE){
 }
 
 ```
-
 
 #### 2.5. Bayesian Information Criterion
 
@@ -510,7 +555,6 @@ computeBIC <- function(x, max_cluster=max_clusters, print_steps=TRUE){
 }
 
 ```
-
 
 #### 2.6. (Cross-)Validated Likelihood
 
@@ -629,12 +673,11 @@ plotData <- function(
 
 ```
 
+# 3 - Comparing EM and K-Means Algorithms
 
-# 3 - Comparing EM and K-Means
+#### 3.1.1. Computing and plotting the results (Full Dataset case)
 
-#### 3.1.1. Computing and plotting the results (Full Dataset)
-
-We compute our results with the EM (with and without the K-Means initialization) and K-Means algorithms on the full dataset.
+We compute the EM (with and without the K-Means initialization) and K-Means algorithms on the full dataset.
 
 ```{r}
 
@@ -658,8 +701,7 @@ resultsKM = kMeans(X, n_clusters)
 
 ```
 
-
-We start with displaying the results of the clustering via a simple K-Means:
+We display the final clustering via a single K-Means:
 
 ```{r}
 
@@ -672,7 +714,7 @@ plotData(X, resultsKM$closest_centroids, resultsKM$centroids)
 
 ```
 
-We display the final clustering for the EM algorithm (with and without KMeans):
+We display the final clustering via the EM algorithm (with and without KMeans):
 
 ```{r}
 
@@ -698,10 +740,13 @@ plotData(X, resultsEMwithKM$clustering, resultsEMwithKM$means,
 
 ```
 
+<u>Observations:</u>
+
+We observe that the EM algorithm with a random initialization performs differently from the K-Means algorithm or its counterpart initialized with the K-Means. At first glance, and given our knowledge of the dataset, it seems that the EM with random initialization perform better overall. We will confirm this in the latter sections.
 
 #### 3.1.2. Computing and plotting the results (Train-Test Split)
 
-We compute our results with the EM and K-Means algorithms on the training set.
+We compute the EM and K-Means algorithms on the training data.
 
 ```{r}
 
@@ -721,7 +766,7 @@ resultsKM_train = kMeans(X_train, n_clusters)
 
 ```
 
-Then we test our clustering results on the test dataset.
+We then cluster the test set using the results obtained with the train set.
 
 ```{r}
 
@@ -750,7 +795,20 @@ test_resultsKM$closest = apply(test_resultsKM$closest, 1, which)
 
 ```
 
-We display the final clustering for the EM algorithm (with and without KMeans):
+We display the final clustering via a single K-Means:
+
+```{r}
+
+# non-ggplot implementation without ellipses
+# plot(X_test, col=test_resultsKM$closest+1, pch=19)
+# points(resultsKM_train$centroids, col=1, pch=10)
+
+plotData(X_test, test_resultsKM$closest, resultsKM_train$centroids, 
+         t="K-Means, test set")
+
+```
+
+We display the final clustering via the EM algorithm (with and without KMeans):
 
 ```{r}
 
@@ -778,25 +836,21 @@ plotData(X_test, test_resultsEM_withKM$clustering,
 
 ```
 
+<u>Observations:</u>
 
-We display the final clustering for the K-Means algorithm:
-
-```{r}
-
-# non-ggplot implementation without ellipses
-# plot(X_test, col=test_resultsKM$closest+1, pch=19)
-# points(resultsKM_train$centroids, col=1, pch=10)
-
-plotData(X_test, test_resultsKM$closest, resultsKM_train$centroids, 
-         t="K-Means, test set")
-
-```
-
-Relying on the **mclust** library, we compute the classError and adjustedRandIndex to assess the quality of our clustering.
+Compared to using the full dataset, we find that, in general, the EM algorithm with K-Means initialization offers a clustering slightly closer to what we would expect. In the meantime, the clustering resulting from a simple K-Means is similar to that obtained on the full dataset.
 
 #### 3.2.1 Classification Error when clustering the whole dataset
 
 Relying on the **mclust** library, we compute the [classError](https://mclust-org.github.io/mclust/reference/classError.html) to assess the quality of our clustering. The **Classification Error** corresponds to the rate of a given classification relative to the known classes, and the location of misclassified data points. I.e. Lower the better.
+
+<u>K-Means:</u>
+
+```{r}
+
+classError(resultsKM$closest_centroid, y)
+
+```
 
 <u>Expectation-Maximization:</u>
 
@@ -816,16 +870,16 @@ classError(resultsEMwithKM$clustering, y)
 
 ```
 
+#### 3.2.2 Classification Error when clustering the test set (after training)
+
+
 <u>K-Means:</u>
 
 ```{r}
 
-classError(resultsKM$closest_centroid, y)
+classError(test_resultsKM$closest, y_test)
 
 ```
-
-
-#### 3.2.2 Classification Error when clustering the test set (after training)
 
 <u>Expectation-Maximization:</u>
 
@@ -845,18 +899,17 @@ classError(test_resultsEM_withKM$clustering, y_test)
 
 ```
 
+#### 3.3.1. Adjusted Rand Index when clustering the whole dataset
+
+Relying on the **mclust** library, we compute the [Adjusted Rand Index](https://mclust-org.github.io/mclust/reference/adjustedRandIndex.html) to assess the quality of our clustering. The **Adjusted Rand Index** compares two partitions of values with a resulting score between 0 and 1, with zero indicating randomness between the two and 1 indicating a perfect match. I.e. Higher the better.
+
 <u>K-Means:</u>
 
 ```{r}
 
-classError(test_resultsKM$closest, y_test)
+adjustedRandIndex(resultsKM$closest_centroid, y)
 
 ```
-
-
-#### 3.3.1. Adjusted Rand Index when clustering the whole dataset
-
-Relying on the **mclust** library, we compute the [Adjusted Rand Index](https://mclust-org.github.io/mclust/reference/adjustedRandIndex.html) to assess the quality of our clustering. The **Adjusted Rand Index** compares two partitions of values with a resulting score between 0 and 1, with zero indicating randomness between the two and 1 indicating a perfect match. I.e. Higher the better.
 
 <u>Expectation-Maximization:</u>
 
@@ -876,16 +929,15 @@ adjustedRandIndex(resultsEMwithKM$clustering, y)
 
 ```
 
+#### 3.3.2. Adjusted Rand Index when clustering the test set (after training)
+
 <u>K-Means:</u>
 
 ```{r}
 
-adjustedRandIndex(resultsKM$closest_centroid, y)
+adjustedRandIndex(test_resultsKM$closest, y_test)
 
 ```
-
-
-#### 3.3.2. Adjusted Rand Index when clustering the test set (after training)
 
 <u>Expectation-Maximization:</u>
 
@@ -902,14 +954,6 @@ For the case with a k-means initialization:
 ```{r}
 
 adjustedRandIndex(test_resultsEM_withKM$clustering, y_test)
-
-```
-
-<u>K-Means:</u>
-
-```{r}
-
-adjustedRandIndex(test_resultsKM$closest, y_test)
 
 ```
 
@@ -998,9 +1042,9 @@ We find that the best results are obtained using 3 clusters with the high-dimens
 randomized_Xhd = Xhd[randomized_indexes,]
 randomized_yhd = y[randomized_indexes]
 Xhd_train = randomized_Xhd[1:training_split,]
-Xhd_test = randomized_Xhd[training_split:n,]
+Xhd_test = randomized_Xhd[(training_split+1):n,]
 yhd_train = randomized_yhd[1:training_split]
-yhd_test = randomized_yhd[training_split:n]
+yhd_test = randomized_yhd[(training_split+1):n]
 
 resultsEMhd_train = expectationMaximization(Xhd_train, 3)
 
@@ -1031,7 +1075,7 @@ plotData(Xhd_test[,c(1,3)], test_resultsEMhd$clustering,
 
 ```{r}
 
-classError(test_resultsEMhd$clustering, y_test)
+classError(test_resultsEMhd$clustering, yhd_test)
 
 ```
 
@@ -1040,7 +1084,7 @@ classError(test_resultsEMhd$clustering, y_test)
 
 ```{r}
 
-adjustedRandIndex(test_resultsEMhd$clustering, y_test)
+adjustedRandIndex(test_resultsEMhd$clustering, yhd_test)
 
 ```
 
