@@ -98,8 +98,6 @@ To properly assess the resulting clusterings that will be performed below, we sp
 
 To this effect, we choose a $0.7$ split for training and $0.3$ split for testing. This is informed by it being the standard split in the AI field for small datasets. The split is done via randomizing the dataset order and splitting at the $0.7/0.3$ threshold.
 
-**Note**: *Going lower in terms of split (e.g. 0.66.../0.33..) starts yielding an increasing number of errors. This might be related to the splits not providing enough items to the train set to compute working parameters (e.g. means, variance, etc.) This has not been tested/resolved fully, however. R traceback was not very helpful. If an error occurs involving a wrongly-dimensioned matrix, re-knit/rerun. Clearing the environment in RStudio might also help*.
-
 ```{r}
 
 # We randomize the dataset via its index
@@ -120,7 +118,9 @@ y_test = randomized_y[(training_split+1):n]
 
 # 2 - Function declarations
 
-The following section is used to declare all of the R-markdown functions along with the implementations (from scratch) of the multivariate EM algorithm and the K-Means algorithm. Functions are declared in alphabetical order.
+The following section contains the declarations of all the functions used in this markdown. You will find the from-scratch implementations of the Expectation-Maximization and K-Means algorithms here. The EM algorithm can be declared with random initialization or KM initialization.
+
+Functions are declared in alphabetical order in each subsection.
 
 #### 2.1. Generic functions
 
@@ -198,14 +198,6 @@ generateCentroid <- function(x) {
   return(centroid)
 }
 
-logSumExp <- function (x) {
-  ######
-  #### Computes the log-sum-exponential of a vector/list of variables.
-  ######
-  
-  max(x) + log(sum(exp(x - max(x))))
-}
-
 logLikelihood <- function(n, clusters, x, prop, mu, sigma) {
   ######
   #### Computes the gamma values of a dataset as part of an EM algorithm.
@@ -222,6 +214,14 @@ logLikelihood <- function(n, clusters, x, prop, mu, sigma) {
   
   # return statement
   return(lgn)
+}
+
+logSumExp <- function (x) {
+  ######
+  #### Computes the log-sum-exponential of a vector/list of variables.
+  ######
+  
+  max(x) + log(sum(exp(x - max(x))))
 }
 
 mostMatchingDistribution <- function(clusters, x, prop, mu, sigma){
@@ -641,17 +641,27 @@ plotData <- function(
 
 ```
 
-# 3 - Comparing EM and K-Means Algorithms
+# 3 - Comparing Expectation-Maximization and K-Means Algorithms
 
 #### 3.1.1. Computing and plotting the results (Full Dataset case)
 
-We compute the EM (with and without the K-Means initialization) and K-Means algorithms on the full dataset.
+We compute the EM (with and without KM initialization) and KM algorithms on the whole dataset. We set 3, which we know as the number of wine types in the dataset, as the number of clusters.
 
 ```{r}
 
 n_clusters = 3
 min_clusters = length(unique(y))
 max_clusters = 10
+
+```
+
+```{r}
+
+resultsKM = kMeans(X, n_clusters)
+
+```
+
+```{r}
 
 resultsEMwithoutKM = expectationMaximization(X, n_clusters)
 
@@ -663,13 +673,7 @@ resultsEMwithKM = expectationMaximization(X, n_clusters, kmInit=T)
 
 ```
 
-```{r}
-
-resultsKM = kMeans(X, n_clusters)
-
-```
-
-We display the final clustering via a single K-Means:
+We display the final clustering obtained via the single KM:
 
 ```{r}
 
@@ -682,7 +686,7 @@ plotData(X, resultsKM$closest_centroids, resultsKM$centroids)
 
 ```
 
-We display the final clustering via the EM algorithm (with and without KMeans):
+We display the final clustering obtained via the EM algorithm (with and without KM initialization):
 
 ```{r}
 
@@ -710,11 +714,19 @@ plotData(X, resultsEMwithKM$clustering, resultsEMwithKM$means,
 
 <u>Observations:</u>
 
-We observe that the EM algorithm with a random initialization performs differently from the K-Means algorithm or its counterpart initialized with the K-Means. Furthermore, and at first glance, and given our knowledge of the dataset, the EM with random initialization perform better overall.
+In general, we observe that the EM with random initialization performs differently from its KM-initialized counterpart, or the simple KM. The KM initialization strongly informs the convergence of the EM algorithm towards a local optimum. 
+
+At first glance, and given our knowledge of the Wine dataset, the EM with random initialization seem to perform better overall -- to be verified in the latter subsections.
 
 #### 3.1.2. Computing and plotting the results (Train-Test Split)
 
-We compute the EM and K-Means algorithms on the training data.
+We compute the EM and KM algorithms on the training data. We set 3, which we know as the number of wine types in the dataset, as the number of clusters.
+
+```{r}
+
+resultsKM_train = kMeans(X_train, n_clusters)
+
+```
 
 ```{r}
 
@@ -728,16 +740,19 @@ resultsEM_train_withKM = expectationMaximization(X_train, n_clusters, kmInit=T)
 
 ```
 
-```{r}
-
-resultsKM_train = kMeans(X_train, n_clusters)
-
-```
-
-We then cluster the test set using the results obtained with the train set.
+We perform the clustering on the test set using the results obtained with the algorithms on the train set.
 
 ```{r}
 
+# KM on test set
+test_resultsKM = findClosestCentroids(
+  X_test, 
+  resultsKM_train$centroids,
+  n_clusters
+  )
+test_resultsKM$closest = apply(test_resultsKM$closest, 1, which)
+
+# EM with random init. on test set
 test_resultsEM_withoutKM = mostMatchingDistribution(
   n_clusters, 
   X_test, 
@@ -746,6 +761,7 @@ test_resultsEM_withoutKM = mostMatchingDistribution(
   resultsEM_train_withoutKM$sigma
   )
 
+# EM with KM init. on test set
 test_resultsEM_withKM = mostMatchingDistribution(
   n_clusters, 
   X_test, 
@@ -754,16 +770,9 @@ test_resultsEM_withKM = mostMatchingDistribution(
   resultsEM_train_withKM$sigma
   )
 
-test_resultsKM = findClosestCentroids(
-  X_test, 
-  resultsKM_train$centroids,
-  n_clusters
-  )
-test_resultsKM$closest = apply(test_resultsKM$closest, 1, which)
-
 ```
 
-We display the final clustering via a single K-Means:
+We display the final clustering obtained on the test set via the single KM:
 
 ```{r}
 
@@ -776,7 +785,7 @@ plotData(X_test, test_resultsKM$closest, resultsKM_train$centroids,
 
 ```
 
-We display the final clustering via the EM algorithm (with and without KMeans):
+We display the final clustering obtained on the test set via the EM algorithm (with and without KM initialization):
 
 ```{r}
 
@@ -806,11 +815,15 @@ plotData(X_test, test_resultsEM_withKM$clustering,
 
 <u>Observations:</u>
 
-Compared to using the full dataset, we find that, in general, the EM algorithm with K-Means initialization offers a clustering slightly closer to what we would expect. In the meantime, the clustering resulting from a simple K-Means is similar to that obtained on the full dataset.
+As with using the full dataset, we observe that the EM with random initialization performs slightly differently from its KM-initialized counterpart, or the simple KM. We can still state, however, that the EM with the KM initialization still moves closer to its random-initialized version (**Note**: in some occasions, the two solutions converges to a very similar state). 
+
+As such, the KM initialization still seem to generally inform the convergence of the EM algorithm towards a local optimum, albeit in a lesser manner.
+
+A implementation-wise observation is that, given the small amount of data points, the ggplot2 display of the clustering might fail to produce the 3 expected ellipses as a clustering might end up with two few elements. 
 
 #### 3.2.1 Classification Error when clustering the whole dataset
 
-Relying on the **mclust** library, we compute the [classError](https://mclust-org.github.io/mclust/reference/classError.html) to assess the quality of our clustering. The **Classification Error** corresponds to the rate of a given classification relative to the known classes, and the location of misclassified data points. I.e. Lower the better.
+Relying on the **mclust** library, we compute the [classError](https://mclust-org.github.io/mclust/reference/classError.html) to assess the quality of our clustering. The **Classification Error** corresponds to the rate of a given classification relative to the known classes, and the location of misclassified data points, i.e. "*the lower the better*."
 
 <u>K-Means:</u>
 
@@ -869,7 +882,7 @@ classError(test_resultsEM_withKM$clustering, y_test)
 
 #### 3.3.1. Adjusted Rand Index when clustering the whole dataset
 
-Relying on the **mclust** library, we compute the [Adjusted Rand Index](https://mclust-org.github.io/mclust/reference/adjustedRandIndex.html) to assess the quality of our clustering. The **Adjusted Rand Index** compares two partitions of values with a resulting score between 0 and 1, with zero indicating randomness between the two and 1 indicating a perfect match. I.e. Higher the better.
+Relying on the **mclust** library, we compute the [Adjusted Rand Index](https://mclust-org.github.io/mclust/reference/adjustedRandIndex.html) to assess the quality of our clustering. The **Adjusted Rand Index** compares two partitions of values with a resulting score between 0 and 1, with zero indicating randomness between the two and 1 indicating a perfect match, i.e. "*the higher the better*."
 
 <u>K-Means:</u>
 
@@ -927,13 +940,11 @@ adjustedRandIndex(test_resultsEM_withKM$clustering, y_test)
 
 #### 3.4. Comments and observations
 
-In general, we observe that the EM algorithm performs better than the K-Means algorithm. 
+In general, we observe that the EM algorithm performs better than the KM algorithm. Furthermore we observe that the random initialization performs better in general compared to a KM initialization (in the present bivariate case). 
 
-Furthermore we observe that in general, a random initialization performs better than a k-means initialization for the EM algorithm in the present bivariate case. 
+As the KM provides somewhat already locally-optimized centroids, it is fair to suppose that the EM algorithm with KM initialization does not update the mixture parameters as much in the same amount of iterations as its random initialization counterpart (The EM algorithm still improves on the performance of the KM alone).
 
-As the K-Means provides somewhat already optimized centroids, the algorithm does not seem to update the mixture parameters as much in the same amount of iterations as the random initialization. However, we still observe that the EM algorithm improves on the performance of the K-Means alone.
-
-These observations are highlighted by our metrics (class error and adjusted rand index) where the EM algorithm obtains better results (lower class error and higher adjusted rand index) compared to the KM algorithm.
+These observations are underlined by our computed metrics (class error and adjusted rand index) where the EM algorithm obtains better results (lower class error and higher adjusted rand index) compared to the KM algorithm.
 
 <u>Example of metrics obtained on October 29th:</u>
 
@@ -948,9 +959,9 @@ These observations are highlighted by our metrics (class error and adjusted rand
 
 # 4 - Performing Model Selection with the EM algorithm
 
-Starting with a cluster number of 3 (which we know as the number of types of wine in the dataset), we increase the cluster number and check with different heuristics/criteria in order to select the best EM model.
+To perform model selection, we decide to increment the number of clusters from 3 to 10 included and check each resulting EM model's performance with three different criteria: Akaike Information Criterion, Bayesian Information Criterion, and the Double Cross-Validation heuristic. These three approaches will inform our selection approach.
 
-Given our previous results, we use the EM algorithm with a random initialization to compute our criteria.
+Given our previous results, we decide to use the EM algorithm with random initialization.
 
 #### 4.1. Using the Akaike Information Criterion
 
@@ -981,19 +992,17 @@ cv_logLikelihoods = doubleCrossValidation(X_train, X_test)
 
 #### 4.4. Comments and observations
 
-We find that the Akaike Information Criterion is unstable compared to the Bayesian Information Criterion and the Cross-Validated Likelihood (here the double cross-validation). Furthermore, the AIC consistently prefers models with a higher number of clusters.
+We find that the Akaike Information Criterion is unstable compared to the Bayesian Information Criterion and the Cross-Validated Likelihood. Furthermore, the AIC consistently prefers models with a higher number of clusters.
 
-Meanwhile the latter two criteria consistently yield 3 as the most optimal number of clusters (on the whole dataset for the BIC and the case of the train/test split for the double cross-validation).
-
-As expected, the BIC penalizes numbers of clusters higher than necessary more than the AIC, yielding a result closer (here equaling) the ground truth.
+Meanwhile the BIC and double cross-validation generally yield 3 as the most optimal number of clusters. As expected, the BIC penalizes a number of clusters that is higher than necessary compared to the AIC. This results in the BIC yielding a result closer to the ground truth.
 
 # 5 - Testing with higher-dimensional spaces
 
-We will operate in two steps. At first we will hand-pick a select few features to observe whether we obtain any change compared to the previous bivariate case. Then we sample at random features sets and iterate over them.
+We operate in two steps. We first hand-pick a select few features to observe whether we obtain any change compared to the previous bivariate case. Then we sample feature sets at random and iterate over them with the EM algorithm.
 
 #### 5.1. Hand-selected features
 
-We selected the first 3 features in this first hand-selected testing of the EM algorithm. This corresponds to selecting the variables 2, 3, and 4 of the Wine dataset.
+As part of our first, hand-picked case, we selected the first 3 features of the dataset. They correspond to selecting the variables 2, 3, and 4 of the Wine dataset.
 
 ```{r}
 
@@ -1003,7 +1012,7 @@ Xhd = as.matrix(wine[,c(2:4)])
 
 <u>Computing the BIC on the whole dataset:</u>
 
-We compute the best cluster number for the whole dataset using the BIC criterion.
+We compute the best cluster number on the whole dataset using the BIC.
 
 ```{r}
 
@@ -1013,7 +1022,7 @@ computeBIC(Xhd)
 
 <u>Computing the Class Error and Adjusted Rand Index in the train/test case:</u>
 
-As we find via the BIC that the best results are again obtained using 3 clusters with this selected high-dimensional dataset, we try to apply the EM algorithm on a train split of the dataset. Then, we will check the resulting clustering on the test split.
+As we find with the BIC that the best result is again obtained with a cluster number of 3 clusters, we try to apply the EM algorithm on a train split of the 3-feature dataset. Then, we will check the resulting clustering on the test split.
 
 ```{r}
 
@@ -1036,7 +1045,8 @@ test_resultsEMhd = mostMatchingDistribution(
   )
 
 ```
-Once done with the EM iteration, we visualize the resulting clustering on the test set by focusing on the two features we previously focused on with the bivariate case:
+
+Once done with the EM iteration, we visualize the resulting clustering on the test set by focusing on the two features we previously used in the bivariate case:
 
 ```{r}
 
@@ -1068,19 +1078,21 @@ adjustedRandIndex(test_resultsEMhd$clustering, yhd_test)
 
 <u>Comments and observations:</u>
 
-Going through multiple trials of the present EM algorithm, we find similar results as with the bivariate case, that is: the most efficient number of clusters is 3. This result is expected as we know there are 3 types of wine in the dataset. Having a proof through the application of the EM algorithm is reassuring.
+Going through multiple trials of the present EM algorithm with 3 features, we find similar results as with the bivariate case, that is: the most efficient number of clusters is 3. 
+
+This result is expected as we know there are 3 types of wine in the dataset. Having a proof through the application of the EM algorithm is reassuring.
 
 #### 5.2.1. Randomly selected features
 
-As previously mentioned, we also test a number of different higher-dimension sets of features. To do so, we randomly generate five 10-element permutations and five 5-element permutations from the dataset (out of 27 feature columns). From the latter set of 5-element permutations, we build the corresponding sets of 3-element, and 4-element sub-permutations.
+As previously mentioned, we also want to test a number of different higher-dimensional sets of features. 
 
-As such, the selection of permutations would look something like:
+To do so, we randomly generate five 10-element permutations and five 5-element permutations from the dataset (out of the 27 available feature columns). From the latter set of 5-element permutations, we build the corresponding sets of 3-element, and 4-element sub-permutations.
 
-- (a,b,c,d,e), (a,b,c,d), (a,b,c,e), (a,c,d,e), ..., (b,c,d), (c,d,e)
+As such, the resulting number of generated permutations is:
 
-- i.e. 5 10-permutations, 5 5-permutations, 600 4-permutations, 14400 3-permutations.
+- 5 10-elem. permutations, 5 5-elem. permutations, 600 4-elem. permutations, 14400 3-elem. permutations.
 
-Given this high number of permutations, we only randomly select 20 permutations out of the 4- and 3- permutations sets respectively. 
+Given this high number of permutations, we only randomly select 20 permutations out of the 4- and 3-element permutations sets respectively. 
 
 As such, we will run the EM algorithm on 50 different sets of features in dimensions 10, 5, 4, and 3.
 
@@ -1136,7 +1148,7 @@ three_perms = as.matrix(three_perms)
 
 ```
 
-We remove the duplicated permutations if there is any:
+We remove the duplicated permutations if need be:
 
 ```{r}
 
@@ -1147,7 +1159,7 @@ three_perms = three_perms[!duplicated(apply(three_perms, 1, sort)),]
 
 ```
 
-#### 5.2.2. Computing the AIC and BIC for the 10-element permutations
+#### 5.2.2. Computing the AIC and BIC on the 10-element permutations
 
 We compute the best number of clusters via the use of the AIC and BIC with the following features of the wine dataset.
 
@@ -1171,11 +1183,11 @@ for (perm in 1:nrow(five_perms)) {
 
 <u>Comments:</u>
 
-As previously seen, we see that the AIC yields higher and different clusters per given set of permutated features. However, it seems that the BIC also starts yielding a higher number of clusters as a result.
+As previously seen, we see that the AIC yields higher and different cluster numbers per given set of permutated features. However, it seems that the BIC also starts yielding a higher number of clusters as a result.
 
-We might want to hypothesize that the EM algorithm is less efficient in higher dimensions as we are trying to split a population of 3 types using an increasingly more complex space.
+We might want to hypothesize that the EM algorithm is less efficient in higher dimensions for the Wine dataset. Indeed, we are trying to split a population of 3 types using an increasingly more complex space.
 
-#### 5.2.3. Computing the AIC and BIC for the 5-element permutations
+#### 5.2.3. Computing the AIC and BIC on the 5-element permutations
 
 We compute the best number of clusters via the use of the AIC and BIC with the following features of the wine dataset.
 
@@ -1199,13 +1211,15 @@ for (perm in 1:nrow(five_perms)) {
 
 <u>Comments:</u>
 
-As previously seen, we see that the AIC yields higher and different clusters per given sets of permutated features. As with the case of the 10-element permutations, we observe that depending on the permutations, the BIC also yields a higher number of clusters. However, given a run of 5-element permutations, we tend to find an average lower number of clusters than with 10-element permutations.
+As previously seen, we see that the AIC yields higher and different clusters per given sets of permutated features. As was the case for the 10-element permutations, we observe that depending on the permutations, the BIC also yields a higher number of clusters. 
 
-Here, we might refine our hypothesis again: that the EM algorithm is indeed less efficient in higher dimensions as we are trying to split a population of 3 types using an increasingly more complex space. As such, the lower the dimension of the data, the easier it is to cluster the Wine dataset.
+However, we tend to find on average a lower number of clusters than with 10-element permutations.
 
-Of note, this lack of performance at a higher dimension seems to lso be highly dependent on the selected features.
+Here, we might repeat our hypothesis: that the EM algorithm is indeed less efficient in higher dimensions as we are trying to split a population of 3 types using an increasingly more complex space. There seems to be a sweet spot in the case of the Wine dataset where a lower number of features results in a more efficient separation of the data into its ground truth clusters.
 
-#### 5.2.4. Computing the BIC for the 4-element permutations
+Of note, this lack of performance at a higher dimension seems to also be highly dependent on the selected features.
+
+#### 5.2.4. Computing the BIC on the 4-element permutations
 
 ```{r}
 
@@ -1215,11 +1229,12 @@ for (perm in sample(1:nrow(four_perms), 20)) {
 }
 
 ```
+
 <u>Comments:</u>
 
-Compared to the 10-element and 5-element permutations, and only using the BIC criterion, we find that most of the runs yield 3 as the best number of clusters. This might reinforce our hypothesis.
+Compared to the 10-element and 5-element permutations, and only using the BIC, we find that a larger number of the runs yield 3 as the best number of clusters. This reinforce our hypothesis.
 
-#### 5.2.5. Computing the BIC for the 3-element permutations
+#### 5.2.5. Computing the BIC on the 3-element permutations
 
 ```{r}
 
@@ -1232,15 +1247,19 @@ for (perm in sample(1:nrow(three_perms), 20)) {
 
 <u>Comments:</u>
 
-In most run, we always yield 3 as the best number of clusters.
+In most runs, we mostly yield 3 as the best number of clusters.
 
 #### 5.2.6. Overall observations
 
-Overall, it seems that the higher the dimension we decide to iterate over with the EM algorithm, the higher the resulting number of clusters we find (even when using the BIC criterion which penalizes a more complex model).
+Overall, it seems that the higher the feature dimension we iterate over with the EM algorithm, the higher the resulting number of clusters we find (even when using the BIC criterion which should penalize more complex model).
 
-Though at this stage it remains an hypothesis, we can suppose that the EM algorithm, which finds a local optimum might get stuck in such a situation in a higher dimensional space. This may yield non-optimum results in higher dimensions.
+Though at this stage it remains an hypothesis, we can suppose that the EM algorithm, which usually finds a local optimum, might struggle in a higher dimensional space with the Wine dataset as we know the ground truth to be 3 clusters. 
 
-As such, and given these experimental results on the Wine dataset (and granted that we know the actual number of wine types in the dataset), we might want to inform our heuristic by trying to keep our selection of features low. 
+As such, in the case of the Wine dataset, the EM algorithm may yield non-optimum results when iterated over high-dimensional data.
+
+As such, and given these experimental results, we might want to inform any feature heuristic by keeping our feature selection to a low number (i.e. as close to the ground truth as possible). 
+
+<hr>
 
 # 6 - Known issues with the current implementation
 
