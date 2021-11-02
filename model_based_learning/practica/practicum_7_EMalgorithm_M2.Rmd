@@ -17,6 +17,10 @@ We consider $X\sim \mathcal{N}(\mu,\Sigma)$, with
 ```{r}
 
 library(mvtnorm)
+library(pgmm)
+library(mvtnorm)
+library(mclust)
+library(ggplot2)
 
 ```
 
@@ -61,7 +65,7 @@ X[missing_idx.mcar, 2] = NA
 **Q3)** Propose a simple initialization for the EM algorithm. 
 
 ```{r}
-
+n
 # We use the empirical mean and sigma
 
 mu_init = apply(X, 2, mean, na.rm=TRUE)
@@ -72,7 +76,55 @@ sigma_init = cov(X, use="complete.obs")
 
 **Q4)** Write a function for the E-step and the M-step. 
 
-**Q5)** Use the EM algorithm for $50$ iterations to estimate $\mu$ and $\Sigma$. Show the results. 
+```{r}
+
+expectationStep <- function(X, mu, Sigma) {
+  ######
+  #### Expectation step of a bivariate dataset with missing data in the
+  #### second dimension, i.e., X[,2]
+  ######
+    
+  n=nrow(X)
+  missing_idx = which(is.na(X[,2]))
+  
+  #all the element in X1 are observed
+  s1_vec = X[,1]
+  s11_vec = X[,1]^2
+  s2_vec = rep(0,n)
+  s22_vec = rep(0,n)
+  
+  # For observed elements in X2
+  s2_vec[setdiff(1:n, missing_idx)] = X[setdiff(1:n, missing_idx), 2]
+  s22_vec[setdiff(1:n, missing_idx)] = X[setdiff(1:n, missing_idx), 2]^2
+  
+  # For missing elements in X2
+  s2_vec[missing_idx] = mu[2] + 
+    (Sigma[1,2]/Sigma[1,1]) * (X[missing_idx,1]-mu[1])
+  s22_vec[missing_idx] = s2_vec[missing_idx]^2 + 
+    Sigma[2,2] - 
+    Sigma[1,2]^2 / Sigma[1,1]
+  
+  s12_vec = s1_vec * s2_vec
+  
+  return(list(
+    s1=sum(s1_vec), 
+    s2=sum(s2_vec), 
+    s11=sum(s11_vec), 
+    s22=sum(s22_vec), 
+    s12 = sum(s12_vec)
+    )
+  )
+}
+
+maximizationStep <- function() {
+  
+}
+
+
+
+```
+
+**Q5)** Use the EM algorithm for $50$ iterations to estimate $\mu$ and $\Sigma$. Show the results.
 
 ### Other questions
 

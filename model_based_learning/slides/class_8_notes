@@ -1,0 +1,8 @@
+Example 1: The measuring instrument does not work because the battery is empty
+	-> Missing Completely At Random, as the missingness does not depend on the data
+	
+Example 2: Doctors do not take the time to report the heart rate in the data table when the situation is too critical (patient in a serious situation)
+	-> MNAR, MAR
+
+Example 3: Survey with three variables (heart rate, weight, trauma center). The hospital P measures both the heart rate and the weight of the patient. But the hospital B does not measure the weight
+	-> MNAR (general case), MAR (specific case: if we consider the hospital as an observed variable)
