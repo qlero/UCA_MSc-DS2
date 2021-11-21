@@ -461,10 +461,89 @@ As such, given $\theta$ the angle between the direction of movement $M$ and $C$ 
 
 ![t1_1_image](./t1_images/t1_1.jpg){width=50%}
 
-2. **Assume you have a very nicely behaved population of neurons that is recorded : $n_1$ of them have for $C$, the vector $e_1 = (1,0)$ and $n_2$ of them the vector $e_2 = (0,1)$ and no other preferred direction NB : *this is to make the math easier, it is not true in practice.* Assume that you record all the cells at the same time and that they behave independently of each other given the direction of movement $M$. Rewrite the model with only one Gaussian vector for which you will give the mean vector and the covariance matrix.**
+2. **Assume you have a very nicely behaved population of neurons that is recorded: $n_1$ of them have for $C$, the vector $e_1 = (1,0)$ and $n_2$ of them the vector $e_2 = (0,1)$ and no other preferred direction NB : *this is to make the math easier, it is not true in practice.* Assume that you record all the cells at the same time and that they behave independently of each other given the direction of movement $M$. Rewrite the model with only one Gaussian vector for which you will give the mean vector and the covariance matrix.**
+
+We have established that a neuron can be discribed as $Y = a + b\cos(\theta)+\sigma\epsilon$, and that $\theta=M_\theta-C_\theta$ and $<M,C>=cos(\theta)$. Furthermore, given the stated vectors $e_1$ and $e_2$, we can state:
+
+\begin{align}
+M &= (x, y)\quad\text{with }x,y\in\mathbb{R}\\
+e_1 &= (1, 0)\\
+e_2 &= (0, 1)\\
+<M, e_1> &= x = cos(M) \\
+<M, e_2> &= y = sin(M) \\
+\end{align}
+
+As such, we can respectively describe the neurons with $C=e_1$and $C=e_2$ as:
+
+\begin{align}
+{neuron}_{n_1}&=a_{n_1}+b_{n_1}*cos(M)+\sigma_{n_1}\epsilon_{n_1}\\
+{neuron}_{n_2}&=a_{n_2}+b_{n_2}*sin(M)+\sigma_{n_2}\epsilon_{n_2}\\
+\end{align}
+
+Given each neuron is independent and identically distributed, we can rewrite the behavior of the ensemble of neurons as a single Gaussian vector such that:
+
+\begin{align}
+\forall i&\in\{1,..., n_1+n_2\}\\
+a_i,b_i,\sigma_i&\in\mathbb{R}\\
+\epsilon_i&\sim\mathcal{N}(0, 1)\\
+Y &= \begin{pmatrix} a_{1} \\ \vdots \\ a_{n_1} \\ a_{n_1+1} \\ \vdots \\ a_{n_1+n_2} \end{pmatrix} + \begin{pmatrix} b_{1}*cos(M) \\ \vdots \\ b_{n_1}*cos(M) \\ b_{n_1+1}*sin(M) \\ \vdots \\ b_{n_1+n_2}*sin(M) \end{pmatrix} + \sigma\epsilon\\
+\sigma&=\begin{bmatrix} \sigma_{1} & 0 & \dots & 0 \\ 0 & \sigma_{2} & \dots & 0 \\ \vdots & & \ddots & \\ 0 & &  & \sigma_{n_1+n_2} \end{bmatrix};\quad\epsilon=\begin{pmatrix} \epsilon_{1} \\ \vdots \\ \epsilon_{n_1+n_2} \end{pmatrix}
+\end{align}
+
+Given that $\forall i\in\{1,...,n_1+n_2\},\,\,\mathbb{E}[\epsilon_i]=0$ we have:
+
+\begin{align}
+\mu=\mathbb{E}[Y] &= \begin{pmatrix} a_{1} \\ \vdots \\ a_{n_1} \\ a_{n_1+1} \\ \vdots \\ a_{n_1+n_2} \end{pmatrix} + \begin{pmatrix} b_{1}*cos(M) \\ \vdots \\ b_{n_1}*cos(M) \\ b_{n_1+1}*sin(M) \\ \vdots \\ b_{n_1+n_2}*sin(M) \end{pmatrix}\\
+\Sigma&=\sigma\sigma'=\begin{bmatrix} \sigma_{1}^2 & 0 & \dots & 0 \\ 0 & \sigma_{2}^2 & \dots & 0 \\ \vdots & & \ddots & \\ 0 & &  & \sigma_{n_1+n_2}^2 \end{bmatrix}
+\end{align}
 
 3. **The question is now to decode the signal : you just observe the neurons, you know the parameters $a_i$, $b_i$ and $\sigma_i = \sigma$ (i.e. different intercept and slope but the same variance), for each cell $i$, you want to guess the actual direction of movement $M$. Write down the likelihood (as a function of $M$) of this problem**
 
+Given $\forall i\in\{1,...,n_1+n_2\}, \sigma_i = \sigma$, we can restate $Y$ such that:
+
+\begin{align}Y = Y(M) &= \begin{pmatrix} a_{1} \\ \vdots \\ a_{n_1} \\ a_{n_1+1} \\ \vdots \\ a_{n_1+n_2} \end{pmatrix} + \begin{pmatrix} b_{1}*cos(M) \\ \vdots \\ b_{n_1}*cos(M) \\ b_{n_1+1}*sin(M) \\ \vdots \\ b_{n_1+n_2}*sin(M) \end{pmatrix} + \sigma*I_{n_1+n_2}\begin{pmatrix} \epsilon_{1} \\ \vdots \\ \epsilon_{n_1+n_2} \end{pmatrix}\\
+\mu(M)&=\begin{pmatrix} a_{1} \\ \vdots \\ a_{n_1} \\ a_{n_1+1} \\ \vdots \\ a_{n_1+n_2} \end{pmatrix} + \begin{pmatrix} b_{1}*cos(M) \\ \vdots \\ b_{n_1}*cos(M) \\ b_{n_1+1}*sin(M) \\ \vdots \\ b_{n_1+n_2}*sin(M) \end{pmatrix}\\
+Y(M) &= \mu(M)+\sigma*I_{n_1+n_2}\begin{pmatrix} \epsilon_{1} \\ \vdots \\ \epsilon_{n_1+n_2} \end{pmatrix}
+\end{align}
+
+Now, given the IID characteristic of each neuron, we can write the likelihood of the system as a function of $M$ such that:
+
+\begin{align}
+\forall i&\in\{1,..., n_1+n_2\}\\
+a_i,b_i,\mu_i, \sigma&\in\mathbb{R}\\
+\epsilon_i&\sim\mathcal{N}(0, 1)\\
+f_i(M) &= a_i+b_i*cos(M)+\sigma\epsilon_i\\
+g_i(M) &= a_i+b_i*sin(M)+\sigma\epsilon_i\\
+L(M) &= \prod^{n_1}_{i=1}\frac{1}{\sqrt{2\pi\sigma^2}}\exp(-\frac{(f_i(M)-\mu_i)^2}{2\sigma^2})*\prod^{n_2}_{i=1}\frac{1}{\sqrt{2\pi\sigma^2}}\exp(-\frac{(g_i(M)-\mu_i)^2}{2\sigma^2})\\
+&= \frac{1}{(\sqrt{2\pi\sigma^2})^{n_1+n_2}}*\big(\prod^{n_1}_{i=1}\exp(-\frac{(f_i(M)-\mu_i)^2}{2\sigma^2})*\prod^{n_2}_{i=1}\exp(-\frac{(g_i(M)-\mu_i)^2}{2\sigma^2})\big)\\
+&= \frac{1}{(\sqrt{2\pi\sigma^2})^{n_1+n_2}}*\big(\exp(\frac{-\sum^{n_1}_{i=1}(f_i(M)-\mu_i)^2}{2\sigma^2})*\exp(-\frac{\sum^{n_2}_{i=1}(g_i(M)-\mu_i)^2}{2\sigma^2})\big)\\
+&= \frac{1}{(\sqrt{2\pi\sigma^2})^{n_1+n_2}}*\big(\exp(-\frac{||f(M)-\mu||^2}{2\sigma^2})*\exp(-\frac{||g(M)-\mu||^2}{2\sigma^2})\big)\\
+&= \frac{1}{(\sqrt{2\pi\sigma^2})^{n_1+n_2}}*\big(\exp(-\frac{||f(M)-\mu_f||^2}{2\sigma^2})*\exp(-\frac{||g(M)-\mu_g||^2}{2\sigma^2})\big)\\
+\text{We find that:}\\
+Y-\mu &= ||f(M)-\mu_f||^2+||g(M)-\mu_g||^2\\
+L(M) &= \frac{1}{(\sqrt{2\pi\sigma^2})^{n_1+n_2}}*\exp(-\frac{||Y(M)-\mu(M)||^2}{2\sigma^2})\\
+l(M) &= -\frac{n_1+n_2}{2}log(\pi\sigma^2)-\frac{||Y(M)-\mu(M)||^2}{2\sigma^2}\\
+\end{align}
+
 4. **Show that the maximization of the likelihood in $M$ is equivalent to a least-square minimization problem and that $\sigma$ does not play any role in it.**
 
-5. **Solve for each of the two coeffcients of $M$ (on $e_1$ and $e_2$), the minimization problem. Or solve it directly on $\theta$**
+Maximizing $L(M)$ corresponds to maximizing $l(M)$, i.e. minimizing $||Y(M)-\mu(M)||^2$.
+
+As part of the least-square minization problem, we consider the system $X\beta=Y$ where, in our case, we set the following:
+
+\begin{align}
+X&=\begin{pmatrix} 1 & X_{1} \\ \vdots \\ 1 & X_{n_1+n+2}\end{pmatrix}\\
+\hat{\beta}&=\begin{pmatrix} \hat{a} \\ \hat{b} \end{pmatrix}\\
+\end{align}
+
+It implies that we are looking to find $Y-X\hat{\beta}=0$, i.e.:
+
+$$\begin{pmatrix} Y_1 -\hat{a} + \hat{b}X_1 \\ \vdots \\ Y_{n_1+n_2} -\hat{a} +\hat{b} X_{n_1+n_2}\end{pmatrix}=0_{n_1+n_2}$$
+
+However, we find that this also corresponds to $\beta=\text{argmin}\sum^{n_1+n_2}_{i=1}(Y_i-\sum^2_{j=1}X_{i,j}\hat{\beta}_j)^2=||Y-X\hat{\beta}||^2$.
+
+Consequently, we find a correspondence with our preliminary minimization problem $||Y(M)-\mu(M)||^2$ and the OLS.
+
+5. **Solve for each of the two coefficients of $M$ (on $e_1$ and $e_2$), the minimization problem. Or solve it directly on $\theta$**
+
+*TBD*
