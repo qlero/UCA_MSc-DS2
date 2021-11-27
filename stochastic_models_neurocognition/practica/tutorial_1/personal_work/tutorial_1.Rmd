@@ -33,8 +33,7 @@ We obtain:
 \end{align}
 
 
-2. **Simulate $n = 10$ i.i.d ISI with this model. For fixed $\theta$, plot the likelihood as a function of
-$\eta$.**
+2. **Simulate $n = 10$ i.i.d ISI with this model. For fixed $\theta$, plot the likelihood as a function of $\eta$.**
 
 We first declare a set of functions to help up answer the question.
 
@@ -72,7 +71,7 @@ isi_likelihood_plot_given_theta <- function(observations, theta) {
   for (i in 1:50) {
     likelihoods[i] = isi_likelihood(observations, theta, etas[i])
   }
-  plot(etas, likelihoods, pch = 1,
+  plot(etas, likelihoods, pch = 1, type="l",
        xlab = "Eta", ylab="Likelihood",
        main = paste("Likelihood of observations with fixed Theta=", theta, "\n given Eta ranging from 1 to 10"))
 }
