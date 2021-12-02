@@ -537,13 +537,6 @@ ln(n)d\sigma^2-RSS &\ge 0\\
 
 <u>Computing the estimators:</u>
 
-From the exercise's definition, we know that the true variances of Y1 and Y2 are:
-
-\begin{align}
-var(Y1)&=25\quad\text{(depends on the noise $\epsilon\sim5*\mathcal{N}(0,1)$, i.e. $\epsilon\sim\mathcal{N}(0,25)$)}\\
-var(Y2)&=1\quad\text{(depends on the noise $\epsilon\sim\mathcal{N}(0,1)$)}
-\end{align}
-
 ```{r BIC_best_vectors}
 
 compute_best_vectors <- function(simulation, projection_matrix, known_var, 
@@ -553,17 +546,17 @@ compute_best_vectors <- function(simulation, projection_matrix, known_var,
   ### and a known variance
   f <- function(x){
     inner_product = abs(simulation$noisy_signal %*% x) 
-    penalization = log(length(simulation$noisy_signal))*known_var
+    penalization = sqrt(log(length(simulation$noisy_signal))*known_var)
     inner_product >= penalization
 }
   bests = which(apply(projection_matrix, 2, f))
   cat("The best vectors for the simulation", simulation_number, 
-      "are the following (1-indexed):", bests)
+      "are the following (1-indexed):", bests, "\n")
   bests
 }
 
-Y1_best_vectors = compute_best_vectors(Y1, X, 25, 1)
-Y2_best_vectors = compute_best_vectors(Y2, X, 1, 2)
+Y1_best_vectors = compute_best_vectors(Y1, X, var(Y1$truth), 1)
+Y2_best_vectors = compute_best_vectors(Y2, X, var(Y2$truth), 2)
 
 ```
 
