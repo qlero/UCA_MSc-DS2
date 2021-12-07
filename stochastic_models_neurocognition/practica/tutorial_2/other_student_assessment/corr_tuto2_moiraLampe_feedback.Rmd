@@ -1,0 +1,97 @@
+---
+title: "Tuto2_corrections"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Question 1
+
+You will find the correct syntax (for the first part of your code) below. Note:
+
+- An equivalence check (such as verifying whether column is equal to 1) is performed by using the operator `==` and not `=`. The `=` operator is an allocation (You allocate a value to a variable name). `==` is a that takes two arguments and checks whether they are equal, either in memory, or the stack, or both (dependent on the programming language)
+- `ui` can be declared as a function to be iterated over the empty matrix you created (either with for loops, like you did) or with the use of R functions like `apply()`.
+- Opening a block, like a `if` or `for` block requires a condition set in parentheses `(...)` and an action set in brackets `{...}`. Your nested for-loops didn't work because of missing brackets and ill-declared conditions (e.g. using `=` instead of `==`)
+
+Note: I reduced $n$ to 10 and $p$ to 4 for visualization purposes.
+
+```{r q1_code}
+
+n = 10
+p = 4
+  
+X = matrix(0, nrow = n, ncol = 2*p + 1) #this is an empty matrix
+#number of rows is n because every row represents a time point for the same cell
+
+ui <- function(i) {2*pi*i/n}
+
+for (k in 1:p) {
+  for (row in 1:nrow(X)) {
+    for (column in 1:ncol(X)) {
+      if (column == 1) {
+        #column here is the same as j 
+        X[row, column] = 1
+      } else if (column == 2*k) {
+        #k is the same as p
+        X[row, column] = cos(k*ui(row-1))
+      } else if (column == 2*k + 1) {
+        X[row, column] = sin(k*ui(row-1))
+      }
+    }
+  }
+}
+
+X
+
+```
+
+# Question 2
+
+/!\ `t(X) %*% X` does not yield the identity matrix but a diagonal one. There is a mistake in your explanation: `orthogonality` and `orthonormality` are not the same. An orthonormal matrix is orthogonal, but an orthogonal matrix is not always orthonormal. As such $Q^TQ=I$ only holds for orthonormal matrices, contrary to what you said in the assignment.
+
+- Two vectors are orthogonal if $⟨ u , v ⟩ = 0$. An orthonormal basis is a basis where all basis vectors have length 1 and are orthogonal to each other. [wiki](https://en.wikipedia.org/wiki/Linear_algebra)
+
+Normalizing the column vectors of an orthogonal matrix yields an orthonormal matrix
+
+```{r q2_code1}
+
+round(t(X) %*% X) # the matrix is orthogonal
+# rounding helps see the matrix due to floating point operation results
+
+```
+
+```{r q2_code2}
+
+X_prime = matrix(0, nrow = n , ncol = 2*p + 1) 
+for (j in 1:ncol(X)){ 
+    X_prime[,j] =  X[,j]/(sqrt(sum(X[,j]^2)))
+}
+
+round(t(X_prime)%*%X_prime) # post normalization, the matrix is orthonormal
+
+```
+
+
+# Question 3
+
+Nothing to add per se. 
+
+As part of the code `d=seq(1,p-1,1)` is not used. To have a condition check such that $d < p$, this could be implemented within the function itself.
+
+# Question 4
+
+Nothing to add to the R code. 
+
+The explanation of the problem of overfitting and taking a too low number of dimensions is missing.
+
+# Question 5
+
+The implementation of the Mallow's Cp criterion seems correct. 
+
+The computation of the estimator that minimizes the criterion for the two previous function $Y_1$ and $Y_2$ is missing.
+
+# Question 6
+
+Question was not answered.
