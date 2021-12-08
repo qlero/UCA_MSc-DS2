@@ -1,0 +1,370 @@
+---
+title: "Markov_chains_and_Markov_processes"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 1 - Simulating Markov Chains
+
+## Overview
+
+**To simulate a Markov chain $(X_n)$, we introduce two sequences of Bernoulli random variables $(Y_n)$ and $(Z_n)$ with the following context and parameters:**
+
+\begin{align}
+\mathbb{P}_{0\rightarrow1}&,\text{ the probability to jump from state 0 to state 1}\\
+\mathbb{P}_{1\rightarrow0}&,\text{ the probability to jump from state 1 to state 0}\\
+(Y_i)_{i\in \mathcal{N}}\sim\mathcal{B}(\mathbb{P}_{0\rightarrow1})&,\mathbb{P}(success =Y_i)=\mathbb{P}_{0\rightarrow1}\\
+(Z_i)_{i\in \mathcal{N}}\sim\mathcal{B}(\mathbb{P}_{1\rightarrow0})&,\mathbb{P}(success =Z_i)=\mathbb{P}_{1\rightarrow0}\\
+Y_i, Z_i &\in\{0, 1\}\\
+X_{n+1} &= X_n*(1-Z_{n+1}) + (1-X_n)*Y_{n+1}\\
+X_{n+1} &= X_n*\mathbb{1}_{[\mathbb{P}_{1\rightarrow0}, 1]}(U_{n+1}) + (1-X_n)*\mathbb{1}_{[0, \mathbb{P}_{0\rightarrow1}]}(U_{n+1}\\
+\text{where}&,\,\,(U_n)_{n\ge1}\sim U[0,1]
+\end{align}
+
+**It is assumed that the two sequences are independent from each other, and that $Y_1, ..., Y_n$ and $Z_1, ..., Z_n$ are respectively IID (i.e. their elements are IID).**
+
+**<u>Steps:</u>**
+
+1. We choose an initial condition (i.e. the value of $X_0$)
+2. We choose the parameters $\mathbb{P}_{0\rightarrow1}\in[0,1]$ and $\mathbb{P}_{1\rightarrow0}\in[0,1]$
+3. We simulate different Markov Chains (e.g. simulate a Bernoulli sequence with one or more different methods: Bernoulli function or uniform distribution on the support $[0, 1]$)
+    
+## Implementation
+    
+### Steps 1 & 2 - Declaring a parameter space/initial state
+
+**GOAL** -- We want to initialize under a single function the parameter space and initial state of one or more Markov chain(s), at once. 
+
+**METHOD** -- We decide to initialize our Markov chains to $0$, and generate the jump probabilities $\mathbb{P}_{0\rightarrow1}$ and $\mathbb{P}_{1\rightarrow0}$ as uniform random variables on the $[0,1]$ support, rounded to 2 decimals. 
+
+We also specify other parameters:
+
+- $n$, the number of Markov Chains to generate
+- $t$ the length of each chain
+
+To generate a set of parameters $(\text{initialization value}, n, t, \mathbb{P}_{0\rightarrow1}, \mathbb{P}_{1\rightarrow0})$, we declare the function `generate_params`.
+
+```{r simulation_param_function}
+
+generate_params <- function(n, t, print_probas=T){
+  # Generates a list of jump probabilities from state 0 to 1, 
+  # and vice-versa, plus all required parameters to simulate
+  # subsequent Markov chains.
+  params = list("init"=0,"n"=n,"t"=t,
+                "p0to1"=round(runif(1,0,1),2), 
+                "p1to0"=round(runif(1,0,1),2))
+  if (print_probas) {
+    cat("Probability jump 0 -> 1:", params$p0to1,"\n")
+    cat("Probability jump 1 -> 0:", params$p1to0)
+  }
+  params
+}
+
+```
+
+**RESULTS** -- We display an example of generated Markov chain parameter set:
+
+```{r example_params}
+
+generate_params(n = 10, t = 20)
+
+```
+
+**COMMENTS** -- Since the probabilities $\mathbb{P}_{0\rightarrow1}$ and $\mathbb{P}_{1\rightarrow0}$ are randomly generated, very low or high values on the support $[0,1]$ can be produced. This can yield subsequent Markov chains that will be stuck in one state for long $t$-lenghts. 
+
+### Step 3 - Generating Markov chains
+
+**GOAL** -- To generate and visualize $n$ randomly generated Markov chains, we want to provide different approaches (out of which we will select the fastest).
+
+**METHOD** -- As such, we provide two different approaches:
+
+- <u>Iterative approach:</u> *We generate a 0-valued matrix of shape $n\times t$, and iterate over each row and column, drawing a random uniform variable as input to a check function dependent on the previous row-cell (akin to an indicator function). The output boolean indicates whether to update the current cell (i.e. to jump)*
+- <u>Bernouilli sequence approach:</u> *We generate a 0-valued matrix of shape $n\times t$ and, for each column, two Bernoulli sequences to be used as a mask to update (or not) each row of the column (i.e. to jump between values)*
+
+```{r generation_functions}
+
+simulation_v1_iterative <- function(params) {
+  # Initializes a matrix to the init value found in the variable params
+  # rows = time steps, columns = unique markov chain
+  chains = matrix(params$init, nrow=params$t, ncol=params$n)
+  # Declares a function that performs a check condition (i.e. to 
+  # determine whether to jump state or not)
+  switch <- function(prob) {runif(1,0,1)<=prob}
+  # Iterates over the matrix, updating when needed. Iterating over the 
+  # rows starts at index 2 as we don't expect jumps at t=0 (1 in R) as it
+  # is the fixed initial state.
+  for (row in seq(2,params$t,1)) {
+    for (col in seq(1,params$n,1)){
+      # Updates the value dependent on the cell value at t-1 and
+      # the result of the switch function
+      if (chains[row-1,col]==0 && switch(params$p0to1)) {
+        chains[row,col]=1
+      } else if (chains[row-1,col]==1 && switch(params$p1to0)) {
+        chains[row,col]=0
+      } else {
+        chains[row,col]=chains[row-1,col]
+      }
+    }
+  }
+  chains
+}
+
+simulation_v2_bernoulli_seqs <- function(params) {
+  # Initializes a matrix to the init value found in the variable params
+  # rows = time steps, columns = unique markov chain
+  chains = matrix(params$init, nrow=params$t,   ncol=params$n)
+  # Declares a function to more explicitly state that
+  # a sequence of bernoulli values from 0 to 1 are 
+  # generated
+  generate_bernoulli_seq <- function(p,n) {rbinom(n, 1, p)}
+  # Iterates over the matrix, updating when needed
+  for (col in seq(1,params$n,1)) {
+    # Generates two sequences Y and Z
+    # we only need t-1 draws as we only update <chains>
+    # starting at the index 2
+    Y = generate_bernoulli_seq(params$p0to1, params$t-1)
+    Z = generate_bernoulli_seq(params$p1to0, params$t-1)
+    for (row in seq(1,params$t-1,1)) {
+        chains[row+1, col] = chains[row,col]*(1-Z[row]) +
+                             (1-chains[row,col])*Y[row]
+      }
+    }
+  chains
+}
+
+```
+
+**RESULTS** -- With the two approaches declared above, we can now generate Markov chains. We also want to see which of the two is the fastest. This can be achieved with the base R function ``system.time()``. To do so, we arbitrarily select large $n$ and $t$ values.
+
+```{r timing_generation_functions}
+
+params = generate_params(n=1000, t=10000)
+system.time(simulation_v1_iterative(params))
+system.time(simulation_v2_bernoulli_seqs(params))
+
+```
+
+We see that the second function is faster by c. one order of magnitude. This can be explained by the absence of branching condition (i.e. `if` blocks) in the second function's body. Branching conditions are time-consuming operations for a CPU, requiring the use of [branch predictors](https://en.wikipedia.org/wiki/Branch_predictor) that can, and in this case do, waste time. As such, we will use the second function to generate Markov chains.
+
+To generate Markov Chains, we arbitrarily set $t=25$ for data visualization purposes (we want to plot the data). Though we could set $n=4$ to get a single $4\times25$ Markov chain matrix, we would like to display different examples of generated Markov chains. As such, we simply run the simulation function four times with different parameter sets.
+
+```{r generating_and_plotting_markov_chains, out.width="100%"}
+
+par(mfrow=c(2,2))
+for (i in 1:4){
+  # Generates a new Markov chain with new parameters p0to1 and p1to0
+  params = generate_params(n=1, t=25, print_probas=F)
+  markov_chain = simulation_v2_bernoulli_seqs(params)
+  # Plots the Markov chain
+  title = paste("Generated Markov Chain n'", i, 
+                "\np_0to1 =", params$p0to1, 
+                "; p_1to0 =", params$p1to0)
+  plot(markov_chain, type="l",
+       main=title, xlab="Timesteps", ylab="Value (either 0 or 1)")
+}
+
+```
+
+**COMMENTS** -- As we can see, the appearance of a generated Markov chain is highly dependent on the randomly generated probabilities of jumping from one state to another.
+
+## 2 - Simulating a Markov Process
+
+## Overview
+
+**<u>Steps:</u>**
+
+1. Simulate $(Y_n)$ with parameters $\alpha\delta$ and $\beta\delta$.
+
+2. Evaluate the distribution of $\tau_1^\delta=N_1\delta$ where $N_1$ is the first time $Y_1 = 1$
+
+3. Plot the empirical distribution of $\tau_1^\delta$ for small $\delta$ and compare with the distribution of $\mathcal{E}$ with parameter $\alpha$. 
+
+## Implementation
+
+### Step 1 - Simulating $(Y_n)$
+
+**GOAL** -- We want to simulate $(Y_n)$, the Markov Chain approximation of the underlying continuous time Markov Process.
+
+**METHOD** -- To simulate $(Y_n)$, we want to start with declaring the rates $\alpha$ and $\beta$, as well as the measure accuracy parameter $\delta$. We also set an arbitrary length $t$ (the number of timesteps). As with simulating a Markov chain, we declare a function `generate_MP_params` that will produce the parameter set to generate a Markov process approximation.
+
+```{r markov_proc_params}
+
+generate_MP_params <- function(n, t, a, b, d) {
+  # Generates a list of probability of jumping from
+  # state 0 to 1, and vice-versa
+  # args:   n -> the number of chains to generate
+  #         t -> the length of each chain
+  params = list("init"=0,"n"=n,"t"=t,
+                "alpha"=a,"beta"=b,"delta"=d,
+                "p0to1"=a*d, "p1to0"=b*d)
+  params
+}
+
+```
+
+**RESULTS** -- We now generate a parameter set as well as the corresponding Markov chain $(Y_i)$ (it's also our Markov process approximation). To do so, we can reuse our previously declared simulation function (the fastest one). 
+
+We arbitrarily select our parameters $\alpha=5$, $\beta=10$, $\delta=0.01$, $n=1000$ and $t=5000$. The rationale is that it is a high enough amount of simulations, while also being low enough that the R Markdown does not take too much time to knit. 
+
+```{r simulating_Yn}
+
+alpha = 5
+beta = 10
+delta = 0.01
+n = 1000
+t = 5000
+
+MP_params = generate_MP_params(n, t, alpha, beta, delta)
+Yn_simulations = simulation_v2_bernoulli_seqs(MP_params)
+
+```
+
+Now that we have generated 1000 $(Y_i)$, we want to display a preliminary view of their resulting change of states. To do so, we pick the first four simulations for visualization purposes, and only visualize the first 500 timesteps:
+
+```{r visualizing_yn_simulations, out.width="100%"}
+
+par(mfrow=c(2,2))
+for (i in 1:4){
+  plot(Yn_simulations[1:500,i], type="l",
+       main=paste("First 500 steps of Markov Chain n'", i, 
+                  "\nwith alpha=5, beta=10, delta=0.01"),
+       xlab="timesteps", ylab="value (either 0 or 1)")
+}
+
+```
+
+**COMMENTS** -- Here we see that despite sharing the exact same parameters, the different $Y_i$ can display very different outcomes.
+
+Of note, when it is said that $\delta$ is a measure accuracy parameter, it implies that $\delta$ represents the frequency of acquisition of the state of an underlying Markov process. I.e. the smaller $\delta$ is, the more timesteps are acquired in a given timeframe (e.g. a second). 
+
+In such a situation, the smaller the $\delta$ parameter, the finer our acquisition process of the Markov process should be. This will have to be taken into account when looking at the distributions in the next sections as two generated Markov chains with the process above, with different parameters $\delta$, will need to be rescaled to be effectively comparable.
+
+### Step 2 - Evaluating the distribution of $\tau_1^\delta=N_1\delta$
+
+**GOAL** -- We now want to evaluate the distribution of $\tau_1^\delta=N_1\delta$.
+
+**METHOD** -- To do so, we retrieve the index of the first time $N_1$ all the Markov chains $(Y_n)$ jumps to the value $1$ at different $\delta$ (via our previously declared simulation process) and evaluate the overall distribution of $\tau_1$. 
+
+Of note, we decrement all retrieved index values $N_1$ by 1 as R is 1-indexed and we know that an exponential distribution has $\mathbb{R}_+$ for support (we want to start at $t=0$ where the initial state is 0 in our case).
+
+To retrieve the indexes, we declare a function `fetch_indexes`.
+
+```{r retrieving_indexes}
+
+fetch_indexes <- function(Yn, d) {
+  # Retrieves the first index where 
+  fetch_idx_one_simulation <- function(x){
+    (c(which(x==1))[1]-1)*d # note the multiplication by d
+    # we need to rescale by d as it is a frequency acquisition 
+    # parameter. It comes handy for comparing distribution
+    # with different d parameters afterwards
+  }
+  apply(Yn,2,fetch_idx_one_simulation)
+}
+
+```
+
+**RESULTS** -- We first start with an example that uses our previously declared parameters.
+
+```{r example_MP}
+
+t1_simulation = fetch_indexes(Yn_simulations, delta)
+
+```
+
+We now have all the list of indexes of $N_1$ (of the first state jump from 0 to 1) of our previously declared Markov process approximations $(Y_n)$. We can then evaluate the distribution of $\tau^\delta_1$ where $\delta=0.01$.
+
+```{r kd_plot_t1_simulations, out.width="100%"}
+
+# Kernel density estimation
+d <- density(t1_simulation)
+# Kernel density plot
+plot(d, lwd = 2, ylab="",
+     main = paste("Distribution of Tau_1^delta\n", "Given delta =", delta),)
+
+```
+
+**COMMENTS** -- As noted as a comment in the body of the function `fetch_indexes`, The multiplication by $\delta$ of the indexes of the first jump to state 1 (i.e. $N_1$) comes from that we need to rescale the jump timing when $\delta$ varies. 
+
+Indeed, and as we have previously noted, $\delta$ is a frequency acquisition parameter. Rescaling allows us to compare distributions of $\tau_1^\delta$ with different $\delta$ parameters as we are going to see next.
+
+This can be repeated (for the functions available above) for any $\delta\le0.01$. The functions break if $\delta$ is higher than this threshold due to the function stack relying on the base R function `rbinom`). For the evaluation of various densities given different $\delta$ parameters, refer to the next step where they are generated and displayed.
+ 
+### Step 3 - Visualizing the empirical distribution of $\tau_1^\delta$
+
+**GOAL** -- We are now interested in varying the value of the parameter $\delta$ and observe the impact on the resulting distribution of $\tau_1^\delta$ compared to that of the Exponential distribution with parameter $\alpha$. The parameter $\alpha$ is shared with the underlying Markov process yielding the variable $\tau_1^\delta$ through the approximation $(Y_n)$. 
+
+**METHOD** -- To do so, we declare our parameter space, along with a sequence of $\delta$ values to be mapped over.
+
+```{r delta_space_params}
+
+n = 5000
+t = 10000
+alpha = 5
+beta = 10
+delta_sequence = as.matrix(c(1e-1,5e-2,1e-2,5e-3,1e-3,5e-4))
+
+```
+
+We want to iterate our simulation process over the sequence of $\delta$ parameters. To do so we declare the function `mapper`, which can be mapped over the sequence. `mapper` holds the composition of previously declared functions `generate_MP_params`, `simulation_v2_bernoulli_seqs`, and `fetch_indexes`.
+
+As such, we generate the following simulations:
+
+| parameters | Sim. 1 | Sim. 2 | Sim. 3 | Sim. 4 | Sim. 5 | Sim. 6 |
+| --- | --- | --- | --- | --- | --- | --- | 
+| n | 5000 | 5000 | 5000 | 5000 | 5000 | 5000 |
+| t | 10000 | 10000 | 10000 | 10000 | 10000 | 10000 |
+| $\alpha$ | 5 | 5 | 5 | 5 |  5 | 5 |
+| $\beta$ | 10 | 10 | 10 | 10 | 10 | 10 |
+| $delta$ | 0.1 | 0.05 | 0.01 | 0.005 | 0.001 | 0.0005 |
+
+```{r delta_space_simulations}
+
+mapper <- function(n, t, a, b, d) {
+  # Function composition to be mapped over the sequence of delta
+  # parameters s.t. fetch . simulate . parameter_generation()
+  fetch_indexes(
+    simulation_v2_bernoulli_seqs(
+      generate_MP_params(n, t, a, b, d)), d)
+}
+
+t1_simulations = apply(delta_sequence, 1, function(x) {mapper(n,t,alpha,beta,x)})
+
+```
+
+**RESULTS** -- As can be seen below, we see that, as the parameter delta is halved at each of the six simulations (starting from 0.1), it seems that the empirical distribution of $\tau^\delta_1$ converges towards that of the exponential distribution that shares the same parameter $\alpha$ as the Markov process approximated by $(Y_n)$. 
+
+As such, it seems to confirm our previous observation that $\delta$ represents the frequency of acquisition of the state of an underlying Markov process and that the smaller $\delta$ is, the finer our simulation of the variable $\tau^\delta_1$. I.e. a lower $\delta$ implies a higher resolution of $\tau^\delta_1$.
+
+```{r density_comparison_different_deltas, out.width="100%"}
+
+# Declares the exponential distribution against which to plot 
+# the simulated Tau_1 times
+exponential_distribution = density(rexp(n, alpha))
+
+# Declares the 2 by 3 plot area
+par(mfrow=c(2,3), mai = c(0.4, 0.25, 0.3, 0.1))
+for (i in 1:6){
+  # Computes the kernel density for each simulation
+  d <- density(t1_simulations[,i])
+  # Plots said density against the exponential distribution
+  plot(d, lwd = 1, col="blue",
+       main = paste("Dist. of Tau_1 with delta=", delta_sequence[i], 
+                    "\nvs. Exp(alpha=", alpha, ")", sep=""),
+       xlab="", ylab="")
+  lines(exponential_distribution, lw=2, lty=3, col="red")
+  legend("topright", legend = c("Tau_1 dist.", 
+                                paste("Exp(", alpha, ") dist.",sep="")),
+       lwd = 3, col = c("blue", "red"))
+}
+
+```
+
+**COMMENTS** -- The convergence can be seen with the spikes in the distribution of $\tau^\delta_1$ disappearing as the parameter $\delta$ is reduced. The spikes are pretty much apparent at $\delta=0.1$ and have pretty much disappeared once $\delta=0.01$ (an order of magnitude lower). Of note, depending on knit runs, the spikes may have already disappeared at $\delta=0.05$. 
+
+Though we do not present a mathematical proof that $\tau^\delta_1$ and the Exponential distribution with parameter $\alpha$ converges in distribution for an underlying continuous time Markov process, the empirical evidence seems to validate this state.
+
+
