@@ -1,0 +1,258 @@
+---
+title: "Markov_chains_and_processes"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 1 - Implementation Markov Chains
+    
+### Steps 1 & 2 - Declaring a parameter space/initial state
+
+
+
+```{r simulation_param_function}
+generate_params <- function(n, t, print_probas=T){
+  # Generates a list of jump probabilities from state 0 to 1, 
+  # and vice-versa, plus all required parameters to simulate
+  # subsequent Markov chains.
+  params = list("init"=0,"n"=n,"t"=t,
+                "p0to1"=round(runif(1,0,1),2), 
+                "p1to0"=round(runif(1,0,1),2))
+  if (print_probas) {
+    cat("Probability jump 0 -> 1:", params$p0to1,"\n")
+    cat("Probability jump 1 -> 0:", params$p1to0)
+  }
+  params
+}
+```
+
+
+```{r example_params}
+generate_params(n = 10, t = 20)
+```
+
+
+### Step 3 - Generating Markov chains
+
+
+
+```{r generation_functions}
+simulation_v1_iterative <- function(params) {
+  # Initializes a matrix to the init value found in the variable params
+  # rows = time steps, columns = unique markov chain
+  chains = matrix(params$init, nrow=params$t, ncol=params$n)
+  # Declares a function that performs a check condition (i.e. to 
+  # determine whether to jump state or not)
+  switch <- function(prob) {runif(1,0,1)<=prob}
+  # Iterates over the matrix, updating when needed. Iterating over the 
+  # rows starts at index 2 as we don't expect jumps at t=0 (1 in R) as it
+  # is the fixed initial state.
+  for (row in seq(2,params$t,1)) {
+    for (col in seq(1,params$n,1)){
+      # Updates the value dependent on the cell value at t-1 and
+      # the result of the switch function
+      if (chains[row-1,col]==0 && switch(params$p0to1)) {
+        chains[row,col]=1
+      } else if (chains[row-1,col]==1 && switch(params$p1to0)) {
+        chains[row,col]=0
+      } else {
+        chains[row,col]=chains[row-1,col]
+      }
+    }
+  }
+  chains
+}
+simulation_v2_bernoulli_seqs <- function(params) {
+  # Initializes a matrix to the init value found in the variable params
+  # rows = time steps, columns = unique markov chain
+  chains = matrix(params$init, nrow=params$t,   ncol=params$n)
+  # Declares a function to more explicitly state that
+  # a sequence of bernoulli values from 0 to 1 are 
+  # generated
+  generate_bernoulli_seq <- function(p,n) {rbinom(n, 1, p)}
+  # Iterates over the matrix, updating when needed
+  for (col in seq(1,params$n,1)) {
+    # Generates two sequences Y and Z
+    # we only need t-1 draws as we only update <chains>
+    # starting at the index 2
+    Y = generate_bernoulli_seq(params$p0to1, params$t-1)
+    Z = generate_bernoulli_seq(params$p1to0, params$t-1)
+    for (row in seq(1,params$t-1,1)) {
+        chains[row+1, col] = chains[row,col]*(1-Z[row]) +
+                             (1-chains[row,col])*Y[row]
+      }
+    }
+  chains
+}
+```
+
+
+```{r timing_generation_functions}
+params = generate_params(n=1000, t=10000)
+system.time(simulation_v1_iterative(params))
+system.time(simulation_v2_bernoulli_seqs(params))
+```
+
+We see that the second function is faster by c. one order of magnitude. This can be explained by the absence of branching condition (i.e. `if` blocks) in the second function's body. Branching conditions are time-consuming operations for a CPU, requiring the use of [branch predictors](https://en.wikipedia.org/wiki/Branch_predictor) that can, and in this case do, waste time. As such, we will use the second function to generate Markov chains.
+
+To generate Markov Chains, we arbitrarily set $t=25$ for data visualization purposes (we want to plot the data). Though we could set $n=4$ to get a single $4\times25$ Markov chain matrix, we would like to display different examples of generated Markov chains. As such, we simply run the simulation function four times with different parameter sets.
+
+```{r generating_and_plotting_markov_chains, out.width="100%"}
+par(mfrow=c(2,2))
+for (i in 1:4){
+  # Generates a new Markov chain with new parameters p0to1 and p1to0
+  params = generate_params(n=1, t=25, print_probas=F)
+  markov_chain = simulation_v2_bernoulli_seqs(params)
+  # Plots the Markov chain
+  title = paste("Generated Markov Chain n'", i, 
+                "\np_0to1 =", params$p0to1, 
+                "; p_1to0 =", params$p1to0)
+  plot(markov_chain, type="l",
+       main=title, xlab="Timesteps", ylab="Value (either 0 or 1)")
+}
+```
+
+
+## 2 - Simulating a Markov Process
+
+
+### Step 1 - Simulating $(Y_n)$
+
+
+
+```{r markov_proc_params}
+generate_MP_params <- function(n, t, a, b, d) {
+  # Generates a list of probability of jumping from
+  # state 0 to 1, and vice-versa
+  # args:   n -> the number of chains to generate
+  #         t -> the length of each chain
+  params = list("init"=0,"n"=n,"t"=t,
+                "alpha"=a,"beta"=b,"delta"=d,
+                "p0to1"=a*d, "p1to0"=b*d)
+  params
+}
+```
+
+
+
+```{r simulating_Yn}
+alpha = 5
+beta = 10
+delta = 0.01
+n = 1000
+t = 5000
+MP_params = generate_MP_params(n, t, alpha, beta, delta)
+Yn_simulations = simulation_v2_bernoulli_seqs(MP_params)
+```
+
+
+
+```{r visualizing_yn_simulations, out.width="100%"}
+par(mfrow=c(2,2))
+for (i in 1:4){
+  plot(Yn_simulations[1:500,i], type="l",
+       main=paste("First 500 steps of Markov Chain n'", i, 
+                  "\nwith alpha=5, beta=10, delta=0.01"),
+       xlab="timesteps", ylab="value (either 0 or 1)")
+}
+```
+
+
+
+### Step 2 - Evaluating the distribution of $\tau_1^\delta=N_1\delta$
+
+
+
+```{r retrieving_indexes}
+fetch_indexes <- function(Yn, d) {
+  # Retrieves the first index where 
+  fetch_idx_one_simulation <- function(x){
+    (c(which(x==1))[1]-1)*d # note the multiplication by d
+    # we need to rescale by d as it is a frequency acquisition 
+    # parameter. It comes handy for comparing distribution
+    # with different d parameters afterwards
+  }
+  apply(Yn,2,fetch_idx_one_simulation)
+}
+```
+
+
+
+```{r example_MP}
+t1_simulation = fetch_indexes(Yn_simulations, delta)
+```
+
+We now have all the list of indexes of $N_1$ (of the first state jump from 0 to 1) of our previously declared Markov process approximations $(Y_n)$. We can then evaluate the distribution of $\tau^\delta_1$ where $\delta=0.01$.
+
+```{r kd_plot_t1_simulations, out.width="100%"}
+# Kernel density estimation
+d <- density(t1_simulation)
+# Kernel density plot
+plot(d, lwd = 2, ylab="",
+     main = paste("Distribution of Tau_1^delta\n", "Given delta =", delta),)
+```
+
+
+ 
+### Step 3 - Visualizing the empirical distribution of $\tau_1^\delta$
+
+
+
+```{r delta_space_params}
+n = 5000
+t = 10000
+alpha = 5
+beta = 10
+delta_sequence = as.matrix(c(1e-1,5e-2,1e-2,5e-3,1e-3,5e-4))
+```
+
+We want to iterate our simulation process over the sequence of $\delta$ parameters. To do so we declare the function `mapper`, which can be mapped over the sequence. `mapper` holds the composition of previously declared functions `generate_MP_params`, `simulation_v2_bernoulli_seqs`, and `fetch_indexes`.
+
+As such, we generate the following simulations:
+
+| parameters | Sim. 1 | Sim. 2 | Sim. 3 | Sim. 4 | Sim. 5 | Sim. 6 |
+| --- | --- | --- | --- | --- | --- | --- | 
+| n | 5000 | 5000 | 5000 | 5000 | 5000 | 5000 |
+| t | 10000 | 10000 | 10000 | 10000 | 10000 | 10000 |
+| $\alpha$ | 5 | 5 | 5 | 5 |  5 | 5 |
+| $\beta$ | 10 | 10 | 10 | 10 | 10 | 10 |
+| $delta$ | 0.1 | 0.05 | 0.01 | 0.005 | 0.001 | 0.0005 |
+
+```{r delta_space_simulations}
+mapper <- function(n, t, a, b, d) {
+  # Function composition to be mapped over the sequence of delta
+  # parameters s.t. fetch . simulate . parameter_generation()
+  fetch_indexes(
+    simulation_v2_bernoulli_seqs(
+      generate_MP_params(n, t, a, b, d)), d)
+}
+t1_simulations = apply(delta_sequence, 1, function(x) {mapper(n,t,alpha,beta,x)})
+```
+
+
+
+```{r density_comparison_different_deltas, out.width="100%"}
+# Declares the exponential distribution against which to plot 
+# the simulated Tau_1 times
+exponential_distribution = density(rexp(n, alpha))
+# Declares the 2 by 3 plot area
+par(mfrow=c(2,3), mai = c(0.4, 0.25, 0.3, 0.1))
+for (i in 1:6){
+  # Computes the kernel density for each simulation
+  d <- density(t1_simulations[,i])
+  # Plots said density against the exponential distribution
+  plot(d, lwd = 1, col="blue",
+       main = paste("Dist. of Tau_1 with delta=", delta_sequence[i], 
+                    "\nvs. Exp(alpha=", alpha, ")", sep=""),
+       xlab="", ylab="")
+  lines(exponential_distribution, lw=2, lty=3, col="red")
+  legend("topright", legend = c("Tau_1 dist.", 
+                                paste("Exp(", alpha, ") dist.",sep="")),
+       lwd = 3, col = c("blue", "red"))
+}
+```
+
+
