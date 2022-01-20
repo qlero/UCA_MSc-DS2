@@ -1,0 +1,153 @@
+---
+title: "latent_space_model"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Statistical models for network visualization
+
+## The MDS
+
+```{r}
+
+library(VBLPCM)
+data(sampson)
+
+A = as.matrix.network.adjacency(samplike)
+
+```
+
+Once we have the network loaded, we first need to compute the shortest-path distance on the graph.
+
+```{r}
+
+g = as.network(A)
+D = dist(g)
+
+```
+
+Here the `dist` function recognizes the object `g` is a network and the shortest-path distance is computed.
+
+The MDS algorithm is implemented in R by the "cmdscale" function:
+
+```{r}
+?comdscale
+```
+
+A call to MDS will be:
+
+```{r}
+Z =cmdscale(D, 2)
+plot(Z, pch=19)
+```
+
+If we want to also plot the edges, we can use the gplot function of the same package:
+
+```{r}
+
+library(sna)
+gplot(A, coord=Z, edge.col="lightgray")
+
+```
+
+It is also interesting to come back to a very simple network.
+
+```{r}
+
+A = cbind(
+  c(0, 1, 1, 1, 0),
+  c(1, 0, 0, 0, 1),
+  c(1, 0, 0, 0, 1),
+  c(1, 0, 0, 0, 1),
+  c(0, 1, 1, 1, 0)
+)
+
+g = as.network(A)
+D = dist(g)
+Z = cmdscale(D, 2)
+gplot(A, coord=Z, edge.col="lightgray")
+
+```
+
+```{r}
+
+A = cbind(
+  c(0, 1, 1, 1),
+  c(1, 0, 0, 0),
+  c(1, 0, 0, 0),
+  c(1, 0, 0, 0)
+)
+
+g = as.network(A)
+D = dist(g)
+Z = cmdscale(D, 2)
+gplot(A, coord=Z, edge.col="lightgray", label=1:5)
+
+```
+
+As we see on this quite simple example, MDS can be trapped in some difficult numerical situations and the resulting visualization can become very poor.
+
+## The Latent Space Model
+
+Let's first try to code ourselves an implementation of the LSM.
+
+```{r}
+
+loglik <- function(theta, A, d) {
+  # Definition of the log-likelihood to optimize
+  ll=0
+  n = nrow(A)
+  alpha = theta[1]
+  Z = matrix(theta[-1], ncol=d)
+  D = as.matrix(dist(Z))
+  for (i in 1:(n-1)) {
+    for (j in (i+1):n) {
+      ll = ll + A[i,j] * (alpha - D[i,j]) - log(1+exp(alpha - D[i,j]))
+    }
+  }
+  ll = 2*ll # to account all the symmetric values
+  ll
+}
+
+LSM <- function(A, d=2) {
+  # A: Adjacency Matrix, denoted by X in the math
+  # Y: covariate (could be null)
+  # d: latent space (2 by default)
+  # initializes values for theta
+  n = nrow(A)
+  alpha_0 = 0.5
+  Z_0 = rnorm(n*d, 0, 1)
+  theta = c(alpha_0, Z_0)
+  # numerical optimization TO MODIFY SO IT MAXIMUZES THE LOG-LIKELIHOOD
+  theta_opt = optim(theta, loglik, A=A, d=d)
+  print(matrix(theta_opt$par, ncol=d))
+  print(theta_opt[-1])
+  print(theta_opt[1])
+  alpha = theta_opt[1]
+  Z = matrix(theta_opt$par[-1], ncol=d)
+  gplot(A, coord=Z, edge.col="lightgray")
+  return(list(alpha=alpha, Z=Z))
+}
+
+```
+
+Test:
+
+```{r}
+
+test = LSM(A, 2)
+
+```
+
+## Exercise
+
+This code won't work as it is because it contains an error. Modify it such that the function maximizes the log-likelihood and then test it on both the simple network and the sampson monks.
+
+
+
+
+
+
