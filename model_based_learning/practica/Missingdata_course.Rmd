@@ -1,0 +1,341 @@
+---
+title: "Missing data lab"
+author: "Aude Sportisse"
+date: "19/10/2021"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+linkcolor: blue
+link-citations: yes
+---
+
+```{r}
+library(mvtnorm) #library for multivariate normal density
+library(ggplot2) #library to have nice graphics
+```
+
+
+# Bias for complete case analysis
+
+We consider a bivariate Gaussian variable   
+$X\sim \mathcal{N}(\mu,\Sigma)$, with
+    $$\mu=\begin{pmatrix} 5 \\ -1
+    \end{pmatrix} \textrm{ and } \Sigma=\begin{pmatrix} 1 & 0.5 \\ 0.5 & 1
+    \end{pmatrix}$$.
+    
+
+
+```{r, generation of the data}
+set.seed(10)
+
+n <- 500
+mu <- c(5, -1)
+Sigma <- matrix(c(1, 0.5,0.5,1), nrow=2)
+X <- rmvnorm(n, mean=mu, sigma=Sigma)
+dim(X)
+head(X)
+```
+
+We introduce missing values in $X$. The goal is to estimate the mean.
+
+```{r, Introduction of NA}
+prop.miss <- 0.3 #we will introduce 30% of missing values.
+nb.miss <- floor(n*prop.miss) #we will introduce 30% of missing values on the second variable.
+```
+
+
+```{r, MCAR values}
+#MCAR: the subpopulation is representative of the overall population.
+missing_idx.mcar <- sample(n, nb.miss, replace = FALSE)
+XNA.mcar <- X
+XNA.mcar[missing_idx.mcar, 2] <- NA
+head(XNA.mcar)
+```
+
+
+
+```{r, MNAR values}
+#MCAR: the subpopulation is NOT representative of the overall population.
+quantile.cut <- min(0.99, prop.miss+0.1)
+quant <- quantile(X[,2], 1-quantile.cut, na.rm=T)
+missing_idx.mnar <- which(rbinom(n, 1, (X[,2]>quant)*prop.miss/quantile.cut)==1)
+XNA.mnar <- X
+XNA.mnar[missing_idx.mnar, 2] <- NA
+head(XNA.mnar)
+print(sum(is.na(XNA.mnar[,2]))/n)
+```
+
+
+
+```{r, function which returns the Maximum Likelihood Estimate}
+ML <- function(missing_idx){
+  hat_mu1_ML <- (1/n)*sum(X[,1])
+  obs_idx <- setdiff(1:n, missing_idx)
+  bar_x1 <- mean(X[obs_idx, 1])
+  bar_x2 <-mean(X[obs_idx, 2])
+  s_11 <- mean((X[obs_idx,1]-bar_x1)^2)
+  s_22 <- mean((X[obs_idx,2]-bar_x2)^2)
+  s_12 <- mean((X[obs_idx,1]-bar_x1)*(X[obs_idx,2]-bar_x2))
+  hat_beta_21.1 <- s_12/s_11
+  hat_beta_20.1 <- bar_x2-hat_beta_21.1*bar_x1
+  hat_mu2_ML <- hat_beta_20.1+hat_beta_21.1*hat_mu1_ML
+  return(hat_mu2_ML)
+}
+```
+
+
+```{r, computation of the Maximum Likelihood Estimate}
+hatmu.mcar <- ML(missing_idx.mcar)
+hatmu.mnar <- ML(missing_idx.mnar)
+hatmu.mcar
+hatmu.mnar
+```
+
+```{r}
+mean(XNA.mcar[,2],na.rm=TRUE)
+mean(XNA.mnar[,2],na.rm=TRUE)
+```
+
+
+```{r, plot}
+data = data.frame(X1=X[,1],X2=X[,2],missing_idx.mcar=is.na(XNA.mcar[,2]),missing_idx.mnar=is.na(XNA.mnar[,2]))
+ggplot(data,aes(x=X1,y=X2,color=missing_idx.mcar))+geom_point(alpha=0.7)+labs(colour="Missing")
+ggplot(data,aes(x=X1,y=X2,color=missing_idx.mnar))+geom_point(alpha=0.7)+labs(colour="Missing")
+```
+
+
+# EM algorithm
+
+```{r, initialization of the EM algorithm with empirical quantities}
+initEM=function(X, missing_idx)
+{
+n=nrow(X)
+r=n-length(missing_idx)
+mu1=mean(X[,1])
+mu2=mean(X[,2], na.rm=T)
+sigma1=mean(X[,1]^2)-mu1^2
+sigma2=mean(X[,2]^2, na.rm=T)-mu2^2
+sigma12=mean(X[,1]*X[,2], na.rm=T)-mu1*mu2
+mu=c(mu1,mu2)
+Sigma=matrix(c(sigma1, sigma12,sigma12,sigma2), nrow=2)
+return(structure(list(mu=mu, Sigma=Sigma)))
+}
+```
+
+```{r, E-step}
+Estep=function(X, mu, Sigma, missing_idx)
+{
+n=nrow(X) 
+
+#all the elements in X1 are observed
+s1_vec = X[,1]
+s11_vec = X[,1]^2
+
+s2_vec = rep(0, n)
+s22_vec = rep(0, n)
+
+#for observed elements in X2
+#setdiff(1:n, missing_idx): observed elements
+s2_vec[setdiff(1:n, missing_idx)] = X[setdiff(1:n, missing_idx),2]
+s22_vec[setdiff(1:n, missing_idx)] = X[setdiff(1:n, missing_idx),2]^2
+
+#for missing elements in X2
+s2_vec[missing_idx] = mu[2]+(Sigma[1,2]/Sigma[1,1])*(X[missing_idx,1]-mu[1])
+s22_vec[missing_idx] = s2_vec[missing_idx]^2 + Sigma[2,2] - Sigma[1,2]^2/Sigma[1,1]
+
+
+s12_vec = s1_vec*s2_vec
+
+return(list(s1=sum(s1_vec), s2=sum(s2_vec), s11=sum(s11_vec), s22=sum(s22_vec), s12=sum(s12_vec)))
+}
+```
+
+
+```{r, M-step}
+Mstep=function(X, s1, s2, s11, s22, s12)
+{
+n=nrow(X)
+mu1=s1/n
+mu2=s2/n
+sigma1=s11/n-mu1^2
+sigma2=s22/n-mu2^2
+sigma12=s12/n-mu1*mu2
+mu=c(mu1,mu2)
+Sigma=matrix(c(sigma1, sigma12,sigma12,sigma2), nrow=2)
+return(structure(list(mu=mu, Sigma=Sigma)))
+}
+```
+
+
+```{r}
+init=initEM(XNA.mcar, missing_idx.mcar)
+hat_mu=init$mu
+hat_Sigma=init$Sigma
+print(hat_mu)
+print(hat_Sigma)
+
+#initialization too easy, try another one.
+#hat_mu=c(0,10)
+#hat_Sigma=init$Sigma
+```
+
+```{r}
+hat_mu
+```
+
+```{r}
+#We plot the mean squared error for mu. 
+error_mu=rep(0,50)
+for(i in 1:50)
+{
+error_mu[i]=sqrt(sum((hat_mu-mu)^2))
+# E step
+E=Estep(XNA.mcar, hat_mu, hat_Sigma, missing_idx.mcar)
+s1=E$s1
+s11=E$s11
+s2=E$s2
+s22=E$s22
+s12=E$s12
+# M step
+M=Mstep(XNA.mcar, s1, s2, s11, s22, s12)
+hat_mu=M$mu
+hat_Sigma=M$Sigma
+}
+#plot(error_mu)
+```
+
+```{r}
+plot(error_mu)
+```
+
+
+```{r}
+hat_mu
+```
+
+
+
+```{r, does it work for MNAR data}
+#does it work for MNAR data ?
+init=initEM(XNA.mcar, missing_idx.mcar)
+hat_mu=init$mu
+hat_Sigma=init$Sigma
+print(hat_mu)
+print(hat_Sigma)
+
+error_mu=rep(0,25)
+for(i in 1:25)
+{
+error_mu[i]=sqrt(sum((hat_mu-mu)^2))
+# E step
+E=Estep(XNA.mnar, hat_mu, hat_Sigma, missing_idx.mnar)
+s1=E$s1
+s11=E$s11
+s2=E$s2
+s22=E$s22
+s12=E$s12
+M=Mstep(XNA.mnar, s1, s2, s11, s22, s12)
+hat_mu=M$mu
+hat_Sigma=M$Sigma
+}
+plot(error_mu)
+```
+
+
+# Comparison of different methods to impute missing values
+
+We will now compare some imputation methods on a real complete dataset in which we will introduce missing values.
+
+
+```{r, load data}
+library(FactoMineR)
+data(decathlon)
+decathlon <- decathlon[, 1:10] #keep only the quantitative variables 
+head(decathlon)
+
+n <- dim(decathlon)[1]
+d <- dim(decathlon)[2]
+```
+
+```{r, introduction of MCAR values}
+prop.miss <- 0.3 
+nb.miss <- floor(n*d*prop.miss)
+missing_pattern.mcar <- matrix(runif(n*d,0,1) < 0.3,nrow=n,ncol=d)
+decathlon.mcar <- decathlon
+decathlon.mcar[missing_pattern.mcar] <- NA
+head(decathlon.mcar)
+decathlon.mcar <- as.matrix(as.data.frame(decathlon.mcar))
+```
+
+```{r, imputation by the mean}
+ImputeMean <- function(tab){
+  m <- apply(tab, 2, mean, na.rm = TRUE)
+  tab <- sapply(1:ncol(tab), function(x) ifelse(is.na(tab[,x]), m[x], tab[,x]))
+  tab <- as.data.frame(tab)
+  return(tab)
+}
+
+decathlon.mean <- ImputeMean(decathlon.mcar)
+head(decathlon.mean)
+```
+
+For softImpute, the main arguments are the following ones: 
+
+* `x`: the dataset with missing values (matrix).
+
+* `rank.max`: the restricted rank of the solution, which should not be bigger than min(dim(x))-1.
+
+* `lambda`: the nuclear-norm regularization parameter.
+
+```{r, imputation with softImpute}
+library(softImpute)
+sft <- softImpute(x = decathlon.mcar, rank.max = 2, lambda = 0.01)
+decathlon.sft <- sft$u %*% diag(sft$d) %*% t(sft$v) # compute the factorization
+decathlon.sft[which(!is.na(decathlon.mcar))] <- decathlon.mcar[which(!is.na(decathlon.mcar))] # replace missing values by computed values
+head(decathlon.sft)
+```
+
+For mice, the main arguments are the following:
+
+* `data`: the dataset with missing values.
+
+* `m`: number of multiple imputations.
+
+
+```{r, multiple imputation, results='hide'}
+library(mice)
+nb_imputeddataset <- 50
+mice_mice <- mice(data = matrix(decathlon.mcar,nrow=n,ncol=d), m = nb_imputeddataset)
+IMP <- 0
+for (i in 1:nb_imputeddataset) { IMP <- IMP + mice::complete(mice_mice, i)}
+decathlon.mice  <-  IMP/nb_imputeddataset  #5 is the default number of multiple imputations
+head(decathlon.mice)
+```
+
+
+```{r, Mean Squared Error (normalized)}
+MSE <- function(X1, X2){ return(norm(as.matrix(X1 - X2),type="F")/norm(as.matrix(X2),type="F"))}
+```
+
+
+```{r, comparison of the methods}
+MSE(decathlon,decathlon.mean)
+MSE(decathlon,decathlon.sft)
+MSE(decathlon,decathlon.mice)
+
+
+#Ideas: tune the hyperparameters (but cross-validation is difficult with missing values), scale the data (the variables have not the same weight otherwise). 
+```
+
+
+
+
+
+
+

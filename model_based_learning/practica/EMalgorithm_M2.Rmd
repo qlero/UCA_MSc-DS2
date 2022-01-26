@@ -1,0 +1,138 @@
+---
+title: "EM algorithm for handling missing data"
+author: "Aude Sportisse"
+date: "25/10/2021"
+output: html_document
+---
+
+```{r}
+library(mvtnorm) #library for multivariate normal density
+library(ggplot2) #library to have nice graphics
+```
+
+
+### Code an EM algorithm
+
+We consider $X\sim \mathcal{N}(\mu,\Sigma)$, with
+    $$\mu=\begin{pmatrix} 5 \\ -1
+    \end{pmatrix} \textrm{ and } \Sigma=\begin{pmatrix} 1 & 0.5 \\ 0.5 & 1
+    \end{pmatrix}.$$ We want to introduce $r=30\%$ of missing values in the variable $X_2$. We consider that the missing-data mechanism is MCAR.
+  
+
+**Q1)** Generate a bivariate normal set of sample size $n=100$, with mean $\mu$ and covariance matrix $\Sigma$ (use the package mvtnorm).
+
+```{r}
+n = 100
+mu = c(5,-1)
+Sigma = matrix(c(1, 0.5, 0.5, 1), ncol=2, nrow=2)
+X = rmvnorm(n,mu,Sigma)
+head(X)
+```
+
+
+**Q2)** Introduce MCAR missing values in $X_2$. 
+
+```{r}
+missing_idx.mcar <- sample.int(n,0.3*n) #indexes of values which will be missing
+XNA <- X
+XNA[missing_idx.mcar,2] <- NA
+head(XNA)
+```
+
+
+The goal is now to estimate the parameters $\mu$ and $\Sigma$ in presence of missing values in $X_2$ by using the EM algorithm.
+
+**Q3)** Propose a simple initialization for the EM algorithm. 
+
+```{r}
+#we have to estimate mu and Sigma
+hat_mu <- apply(XNA,2,mean,na.rm=TRUE)
+hat_mu
+hat_Sigma <- cov(XNA,use="complete.obs") 
+hat_Sigma <- var(XNA,na.rm=TRUE)
+hat_Sigma
+```
+
+
+**Q4)** Write a function for the E-step and the M-step. 
+
+```{r}
+Estep=function(X, mu, Sigma, missing_idx)
+{
+n=nrow(X) 
+
+#all the elements in X1 are observed
+s1_vec = X[,1]
+s11_vec = X[,1]^2
+
+s2_vec = rep(0, n)
+s22_vec = rep(0, n)
+
+#for observed elements in X2
+#setdiff(1:n, missing_idx): observed elements
+s2_vec[setdiff(1:n, missing_idx)] = X[setdiff(1:n, missing_idx),2]
+s22_vec[setdiff(1:n, missing_idx)] = X[setdiff(1:n, missing_idx),2]^2
+
+#for missing elements in X2
+s2_vec[missing_idx] = mu[2]+(Sigma[1,2]/Sigma[1,1])*(X[missing_idx,1]-mu[1])
+s22_vec[missing_idx] = s2_vec[missing_idx]^2 + Sigma[2,2] - Sigma[1,2]^2/Sigma[1,1]
+
+
+s12_vec = s1_vec*s2_vec
+
+return(list(s1=sum(s1_vec), s2=sum(s2_vec), s11=sum(s11_vec), s22=sum(s22_vec), s12=sum(s12_vec)))
+}
+
+Mstep=function(X, s1, s2, s11, s22, s12)
+{
+n=nrow(X)
+mu1=s1/n
+mu2=s2/n
+sigma1=s11/n-mu1^2
+sigma2=s22/n-mu2^2
+sigma12=s12/n-mu1*mu2
+mu=c(mu1,mu2)
+Sigma=matrix(c(sigma1, sigma12,sigma12,sigma2), nrow=2)
+return(structure(list(mu=mu, Sigma=Sigma)))
+}
+```
+
+
+**Q5)** Use the EM algorithm for $50$ iterations to estimate $\mu$ and $\Sigma$. Show the results. 
+
+```{r}
+for(i in 1:50)
+{
+# E step
+E=Estep(XNA, hat_mu, hat_Sigma, missing_idx.mcar)
+s1=E$s1
+s11=E$s11
+s2=E$s2
+s22=E$s22
+s12=E$s12
+# M step
+M=Mstep(XNA, s1, s2, s11, s22, s12)
+hat_mu=M$mu
+hat_Sigma=M$Sigma
+}
+```
+
+```{r}
+hat_mu
+hat_Sigma
+```
+
+
+### Other questions
+
+**Q6)** Vary $n$ and the percentage of missing values $r$.
+
+**Q7)** We have estimated the parameters $\mu$ and $\Sigma$, can we impute the missing values? Try it!
+
+**Q8)** Do you think the algorithm will still work for MNAR data? If you have the time, try it!
+
+**Q9)** How to stop the EM algorithm? (other than by giving a predefined number of steps) 
+
+
+
+

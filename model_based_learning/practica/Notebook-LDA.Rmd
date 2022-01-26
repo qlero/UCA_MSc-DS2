@@ -1,0 +1,137 @@
+---
+title: "Practical work on LDA"
+output:
+  html_document:
+    df_print: paged
+---
+
+The goal is to apply LDA on the Wine data set, which is avalaible in the `pgmm` package.
+
+# Preparation of the data
+
+```{r}
+# we'll use this package to load the data
+#install.packages("pgmm"); install.packages('mvtnorm') 
+library(pgmm); library(mvtnorm)
+```
+
+Once the packages are loaded, we can load the data in the environment.
+
+```{r}
+data(wine)
+head(wine)
+```
+
+The documentation of the data can provide some additional informtation about the data:
+
+```{r}
+?wine
+```
+
+To simplify the data set at first, let's consider only 2 variables and two classes (Barolo vs Grignolino and Barbera):
+
+```{r}
+X = as.matrix(wine[,c(2,4)])
+dim(X)
+colnames(X)
+z = as.numeric(wine$Type!=1) + 1
+```
+
+It is of course possible to look at the data:
+
+```{r}
+plot(X, col = z+1, pch=19)
+```
+# Classification with LDA
+
+In order to classify those data with LDA:
+
+- the first step is to learn the LDA model from the data (i.e. estimate form the data the model parameters)
+
+- then, once the model is learned, we will be able to classify new data to one of the two classes.
+
+LDA assumes the following model:
+
+$$p(x|Z=k;\mu,\Sigma) = \mathcal{N}(x;\mu_k,\Sigma)$$
+
+and $P(Z=k) = \pi_k$.
+
+The ML estimation conduices to the following updates:
+
+- $$\hat{\pi}_k = \sum_{i=1}^n 1(z_i = k) / n$$
+
+- $$\hat{\mu_k} =  \sum_{i=1}^n 1(z_i = k) x_i / n_k$$
+
+- $$\hat{\Sigma} = \frac{1}{n}\sum_{k=1}^K n_k S_k$$
+
+where $$S_k = \frac{1}{n_k}\sum_{i=1}^n 1(z_i = k) (x_i -\hat{\mu_k})^t (x_i -\hat{\mu_k})$$
+
+Let's now code that...
+
+```{r}
+lda.learn <- function(X,z){
+  n = nrow(X); p = ncol(X)
+  K = max(z)
+  prop = rep(NA,K)
+  mu = matrix(NA,K,p)
+  Sigma = matrix(0,p,p)
+  for (k in 1:K){
+    nk = sum(z == k)
+    prop[k] =  nk / n
+    mu[k,] = colSums(X[z == k,]) / nk
+    Sigma = Sigma + nk / n * cov(X[z == k,])
+  }
+  return(list(prop = prop, mu = mu, Sigma = Sigma))
+}
+
+params = lda.learn(X,z)
+params
+```
+For the classification step, we use the Maximum A Posteriori (MAP) rule:
+
+$$z^* = argmax_k P(Z=k|X=x^*)$$
+
+To compute those posterior probabilities from the data and the learned parameter, we can rely on the Bayes' rule:
+
+$$P(Z=k|X=x^*,\hat{\theta}) = \frac{P(Z=k|\hat{\theta})p(x^*|Z=k,\hat{\theta})}{p(X)}$$
+$$P(Z=k|X=x^*,\hat{\theta}) = \frac{\hat{\pi}_k\phi(x^*|\hat{\mu}_k,\hat{\Sigma})}{p(X)}$$
+
+where $\phi$ is the pdf of the Gaussian distribution.
+
+So, the prediction step of LDA resumes to the computation of the $K$ posterior probabilities  $P(Z=k|X=x^*)$ with the above formula:
+
+```{r}
+lda.predict <- function(xstar,params){
+  K = length(params$prop)
+  Prob = matrix(NA,nrow(xstar),K)
+  for (k in 1:K){
+    Prob[,k] = params$prop[k] * dmvnorm(xstar,params$mu[k,],params$Sigma)
+  }
+  Prob = t(apply(Prob,1,function(x){x / sum(x)}))
+  zstar = apply(Prob,1,which.max)
+  return(list(Prob = Prob,zstar = zstar))
+}
+
+out = lda.predict(X,params)
+head(out$Prob)
+head(out$zstar)
+```
+# Classification of the whole data set
+
+Let's now come back on the full 3-class wine data set and classify it with LDA, using the minimal setup (splitting the data in learning and validation sets) to evaluate in a correct way the performance of LDA on this problem.
+
+```{r}
+X = wine[,-1]
+z = wine$Type
+
+learn = sample(nrow(X),130)
+
+params = lda.learn(X[learn,],z[learn])
+out = lda.predict(X[-learn,],params)
+
+cat('Classification table:\n')
+table(z[-learn],out$zstar)
+
+cat('\nError rate:',sum(z[-learn] != out$zstar) / length(z[-learn]))
+```
+
