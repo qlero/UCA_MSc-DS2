@@ -1,6 +1,8 @@
 ---
 title: "Practical work on LDA"
-output: html_notebook
+output:
+  html_document:
+    df_print: paged
 ---
   
 The goal is to apply LDA on the Wine dataset, available in the `pgmm` package. 
