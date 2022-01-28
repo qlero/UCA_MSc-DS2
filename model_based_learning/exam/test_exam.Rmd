@@ -1,0 +1,45 @@
+---
+title: "Model-Based Learning Exam"
+author: "Quentin Le Roux"
+date: "1/28/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Library imports
+
+```{r}
+
+#install.packages("fitHeavyTail")
+#install.packages("MASS")
+#install.packages("mvtnorm")
+#install.packages("pgmm")
+
+library(fitHeavyTail) # library for Mean, Cov. Matrix estim. under Heavy Tails
+library(MASS)         # Venables, W. N. and Ripley, B. D. (2002)
+library(mvtnorm)      # library for multivariate normal density
+library(pgmm)         # library for Gaussian Mixture Models
+
+```
+
+## 
+
+
+
+
+
+
+<hr>
+
+
+```{r}
+
+```
+
+
+
+
+

@@ -53,3 +53,4 @@ image(X, main="Original data matrix", xaxt="n", yaxt="n")
 image(X[order(out@rowclass), order(out@colclass)],
       main = "Data matrix sorted by groups", 
       xaxt="n", yaxt="n")
+
