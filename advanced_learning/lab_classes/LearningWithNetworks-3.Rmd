@@ -1,0 +1,166 @@
+---
+title: "Network - Lesson 3"
+author: "Pr. Charles Bouveyron"
+date: "Last updated on `r Sys.Date()`"
+output:
+  html_document:
+    toc: yes
+    toc_float:
+      collapsed: yes
+      smooth_scroll: yes
+    toc_depth: 2
+    number_sections: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Statistical models for network visualization
+
+## The Latent Space Model
+
+Let's first try to code ourselves an implementation of the LSM:
+
+```{r}
+library(sna)
+LSM <- function(A,dim=2,...){
+  # A is the adjacency matrix and is denoted by X in the maths,
+  # dim is the dimensionality of the latent space (2 by default)
+  n = nrow(A)
+  
+  # definition of the log-likelihood to optimize
+  negloglik <- function(theta,A,dim){
+    ll = 0
+    alpha = theta[1]
+    Z = matrix(theta[-1],ncol=dim)
+    D = as.matrix(dist(Z))
+    for (i in 1:(n-1)){
+      for (j in (i+1):n){
+        ll = ll + A[i,j]*(alpha - D[i,j]) - log(1 + exp(alpha - D[i,j]))
+      }
+    }
+    negll = - 2 * ll
+  }
+  
+  # Initial values for theta
+  alpha_0 = 0.5
+  Z_0 = rnorm(n*dim,0,1)
+  theta = c(alpha_0,Z_0)
+  
+  
+  # Numerical optimization
+  theta_opt = optim(theta,negloglik,A=A,dim=dim,...) 
+  
+  # Plot and return the results
+  alpha = theta_opt$par[1]
+  Z = matrix(theta_opt$par[-1],ncol=dim)
+  return(list(alpha=alpha,Z=Z))
+}
+```
+
+> Exercise: this code won't work as it because it contains an error. Modify it such that the function maximizes the log-likelihood and then test it on both the simple network and the Sampson monks.
+
+```{r}
+A = cbind(c(0,1,1,1),
+          c(1,0,0,0),
+          c(1,0,0,0),
+          c(1,0,0,0))
+out = LSM(A,dim=2,method="SANN")
+gplot(A,coord = out$Z,edge.col = "lightgray")
+out$Z
+```
+
+
+
+```{r}
+library(VBLPCM)
+data(sampson)
+A <- as.matrix.network.adjacency(samplike)
+
+out = LSM(A,dim=2,method="SANN")
+gplot(A,coord = out$Z,edge.col = "lightgray",label=rownames(A))
+```
+Just to quantify the importance of the work done by LSM in finding relevant positions for plotting the network, we can compare it to a random positionning of the nodes:
+
+```{r}
+n = nrow(A)
+dim = 2
+Z.rand = matrix(rnorm(n*dim,0,1),ncol=dim)
+gplot(A,coord = Z.rand,edge.col = "lightgray",label=rownames(A))
+```
+
+One of the main interest of the LSM model is its ability to model the uncertainty of the edges we observe or not. We can indeed, once the model parameters estimated, compute the posterior probabilities of the edges to be observed: $P(Y_{ij}=1|\hat{\alpha},\hat{Z})$.
+
+Remember that the model assumes: $\mathrm{logit}(P(Y_{ij}=1|\alpha,Z)) = \alpha - d(z_i,z_j)$, where $\mathrm{logit}(p) = \log(\frac{p}{1-p})$. So, it is quite easy to get the expression of $P(Y_{ij}=1|\alpha,Z)$. After some straightforward calculations, we get:
+
+$$P(Y_{ij}=1|\hat{\alpha},\hat{Z}) = \frac{\exp(\hat{\alpha} - d(\hat{z_i},\hat{z_j}))}{1 + \exp(\hat{\alpha} - d(\hat{z_i},\hat{z_j}))}$$
+```{r}
+LSM.posterior <- function(out){
+  n = nrow(out$Z)
+    D = as.matrix(dist(out$Z))
+    P = matrix(0,n,n)
+    for (i in 1:(n-1)){
+      for (j in (i+1):n){
+        P[i,j] = P[j,i] = exp(out$alpha - D[i,j]) / (1 + exp(out$alpha - D[i,j]))
+      }
+    }
+    return(P)
+}
+
+data(sampson)
+A <- as.matrix.network.adjacency(samplike)
+out = LSM(A,dim=2,method="SANN")
+
+
+P = LSM.posterior(out)
+
+par(mfrow=c(1,2))
+image(A,main="Observed edges")
+image(P,main="Posterior probabilities")
+
+par(mfrow=c(1,2))
+gplot(A,coord = out$Z,edge.col = "lightgray")
+gplot(A,coord = out$Z,edge.col = "lightgray",edge.lwd = 10*P)
+```
+The LSM model is also implemented in the `latentnet` package with a MCMC algorithm for inference (of a Bayesian version of the model):
+
+```{r}
+#install.packages("latentnet")
+library(latentnet)
+g = as.network(A)
+out = ergmm(g ~ euclidean(d=2))
+plot(out)
+```
+
+# Clustering of the nodes of a network
+
+## Latent Position Cluster Model (LPCM)
+
+Let first use the `latentnet` package for that. It is almost the same call as above, except we ask now for $K = 3$ groups.
+
+```{r}
+library(latentnet)
+data(sampson)
+A <- as.matrix.network.adjacency(samplike)
+g = as.network(A)
+out = ergmm(g ~ euclidean(d = 2, G = 3))
+plot(out)
+```
+
+The output of this call is both a different visualization and the clustering of the nodes. All the estimated parameters are returned in the `mkl` field, among which the `out$mkl$mbc` provides the posterior cluster means, the variances, the posterior cluster membership probabilities and the cluster proportions:
+
+```{r}
+out$mkl$mbc
+```
+Alternatively, it is also possible to infer the LPCM model with a VBEM algorithm thanks to the `VBLPCM` package:
+
+```{r}
+library(VBLPCM)
+v.start = vblpcmstart(samplike,G=3,model = "plain",LSTEPS = 1e3)
+v.fit = vblpcmfit(v.start,STEPS = 30)
+plot(v.fit)
+```

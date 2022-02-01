@@ -1,0 +1,107 @@
+---
+title: "SBM"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Clustering with the Stochastic Block Model
+
+The 
+
+install.packages(
+  "https://cran.r-project.org/src/contrib/Archive/mixer/mixer_1.9.tar.gz",
+  repos=NULL,
+  type = "source"
+)
+
+```{r}
+
+#install.packages("blockmodels")
+library(blockmodels)
+library(sna)
+
+```
+
+```{r}
+
+#npc <- 30 # nodes per class
+#Q <- 3 # classes
+#n <- npc * Q # nodes
+#Z <- diag(Q) %x% matrix(1, npc,1)
+#P <- matrix(runif(Q*Q), Q, Q)
+#A <- 1*(matrix(runif(n*n), n, n )<Z%*%P%*%t(Z))
+
+# Generate data according to SBM
+K = 3; N = 30
+tau = c(0.1,0.6,0.3)
+PI = rbind(c(0.05,0.15,0.2),
+           c(0.2,0.4,0.01),
+           c(0.15,0.01,0.3))
+PI = PI / 10
+C = t(rmultinom(N,1,tau))
+G = apply(C,1,which.max)
+A = matrix(0,N,N)
+for (i in 1:N){
+  for (j in 1:N){
+    A[i,j] = rbinom(1,1,PI[G[i],G[j]])
+  }
+}
+
+# estimation
+my_model <- BM_bernoulli("SBM", A)
+my_model$estimate()
+which.max(my_model$ICL)
+
+cls =apply(my_model$memberships[[3]]$Z, 1, which.max)
+gplot(A, edge.col="lightgray", vertex.col = cls)
+image(P)
+```
+
+
+```{r}
+
+K=3
+N=300
+tau=c(0.1, 0.6, 0.3)
+PI = rbind(
+  c(0.05, 0.15, 0.2),
+  c(0.2, 0.4, 0.01),
+  c(0.15, 0.01, 0.3)
+)
+PI=PI/10
+C = t(rmultinom(N, 1, tau))
+#MISSING DATA
+
+# estimation
+my_model <- BM_bernoulli("SBM", A)
+my_model$estimate()
+which.max(my_model$ICL)
+
+cls =apply(my_model$memberships[[3]]$Z, 1, which.max)
+gplot(A, edge.col="lightgray", vertex.col = cls)
+image(P)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

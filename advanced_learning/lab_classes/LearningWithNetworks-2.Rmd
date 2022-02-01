@@ -1,0 +1,122 @@
+---
+title: "Network - Lesson 2"
+author: "Pr. Charles Bouveyron"
+date: "Last updated on `r Sys.Date()`"
+output:
+  html_document:
+    toc: yes
+    toc_float:
+      collapsed: yes
+      smooth_scroll: yes
+    toc_depth: 2
+    number_sections: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Statistical models for network visualization
+
+## The MDS
+
+```{r}
+#install.packages("VBLPCM")
+library(VBLPCM)
+data(sampson)
+
+A <- as.matrix.network.adjacency(samplike)
+```
+
+
+Once we have the network loaded, we first need to compute the shortest-path distance on the graph:
+
+```{r}
+g = as.network(A)
+D = dist(g)
+```
+
+Here, the `dist` function recognizes that the object `g` is a network and the shortest-path distance is computed.
+
+The MDS algorithm is implemented in R by the `cmdscale` function:
+
+```{r}
+?cmdscale
+```
+
+A call to MDS will be:
+
+```{r}
+Z = cmdscale(D,2)
+plot(Z,pch=19)
+```
+
+If we want also the edges to be plotted, we can use the `gplot` function of the `sna` package:
+
+```{r}
+library(sna)
+gplot(A,coord = Z,edge.col = "lightgray")
+```
+
+It is also interesting to come back to a very simple network:
+
+```{r}
+A = cbind(c(0,1,1,1),
+          c(1,0,1,0),
+          c(1,1,0,1),
+          c(1,0,1,0))
+
+g = as.network(A)
+D = dist(g)
+Z = cmdscale(D,2)
+library(sna)
+gplot(A,coord = Z,edge.col = "lightgray",label = 1:5)
+```
+
+As we see on this quite simple example, MDS can be trapped in some difficult numerical situations and the resulting visualization may be very bad.
+
+## The Latent Space Model
+
+Let's first try to code ourselves an implementation of the LSM:
+
+```{r}
+LSM <- function(A,dim=2){
+  # A is the adjacency matrix and is denoted by X in the maths,
+  # dim is the dimensionality of the latent space (2 by default)
+  n = nrow(A)
+  
+  # definition of the log-likelihood to optimize
+  loglik <- function(theta,A,dim){
+    ll = 0
+    alpha = theta[1]
+    Z = matrix(theta[-1],ncol=dim)
+    D = as.matrix(dist(Z))
+    for (i in 1:(n-1)){
+      for (j in (i+1):n){
+        ll = ll + A[i,j]*(alpha - D[i,j]) - log(1 + exp(alpha - D[i,j]))
+      }
+    }
+    ll = 2 * ll
+  }
+  
+  # Initial values for theta
+  alpha_0 = 0.5
+  Z_0 = rnorm(n*dim,0,1)
+  theta = c(alpha_0,Z_0)
+  
+  
+  # Numerical optimization
+  theta_opt = optim(theta,loglik,A=A,dim=dim) 
+  
+  # Plot and return the results
+  alpha = theta_opt[1]
+  Z = matrix(theta_opt[-1],ncol=dim)
+  gplot(A,coord = Z,edge.col = "lightgray")
+  return(list(alpha=alpha,Z=Z))
+}
+```
+
+> Exercize: this code won't work as it because it contains an error. Modify it such that the function maximizes the log-likelihood and then test it on both the simple network and the Sampson monks.

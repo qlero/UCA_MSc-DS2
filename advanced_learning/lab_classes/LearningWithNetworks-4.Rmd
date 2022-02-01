@@ -1,0 +1,190 @@
+---
+title: "Network - Lesson 4"
+author: "Pr. Charles Bouveyron"
+date: "Last updated on `r Sys.Date()`"
+output:
+  html_document:
+    toc: yes
+    toc_float:
+      collapsed: yes
+      smooth_scroll: yes
+    toc_depth: 2
+    number_sections: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Clustering of the nodes of a network
+
+## Latent Position Cluster Model (LPCM)
+
+Exercise: estimate and compare the computing times with both methods.
+
+```{r}
+library(latentnet); library(VBLPCM)
+data(sampson)
+A <- as.matrix.network.adjacency(samplike)
+g = as.network(A)
+system.time(out <- ergmm(g ~ euclidean(d = 2, G = 3)))
+
+system.time(out <- vblpcmfit(vblpcmstart(samplike,G=3,model = "plain",LSTEPS = 1e3),STEPS = 30))
+```
+
+
+```{r eval=FALSE}
+data(sampson)
+A <- as.matrix.network.adjacency(samplike)
+g = as.network(A)
+T1 = T2 = c()
+for (G in 1:10){
+  T1[G] = system.time(ergmm(g ~ euclidean(d = 2, G = G)))[[3]]
+  T2[G] = system.time(vblpcmfit(vblpcmstart(samplike,
+                                            G=G,
+                                            model = "plain",
+                                            LSTEPS = 1e3),STEPS = 30))[[3]]
+}
+matplot(1:4,cbind(T1,T2),col='red',type='l')
+```
+
+> Exercise: evaluate the computing time of both methods according to the size of the network. To do that, it would be possible to generate artificial network according to the LSM model or the LPCM model.
+
+```{r}
+generate.network <- function(n,delta = 1,tau = 0.5){
+  library(mvtnorm)
+  # Generate networks according to the PCM model
+  d = 2;  G = 3
+  mu = delta * rbind(c(0,0), c(1,1), c(-1,1))
+  alpha = 0.5
+  
+  # Generate latent positions from a mixture of Gaussians
+  Z = rbind(rmvnorm(round(n/G),mean = mu[1,],sigma = diag(d)),
+        rmvnorm(round(n/G),mean = mu[2,],sigma = diag(d)),
+        rmvnorm(round(n/G),mean = mu[3,],sigma = diag(d)))
+  grp = rep(1:3,rep(round(n/G),3))
+  
+  # Compute the posterior probabilities to connect
+  D = as.matrix(dist(Z))
+  n = nrow(Z)
+  P = matrix(0,n,n)
+  for (i in 1:(n-1)){
+    for (j in (i+1):n){
+      P[i,j] = P[j,i] = exp(alpha - D[i,j]) / (1 + exp(alpha - D[i,j]))
+    }
+  }
+  
+  # Threshold the probabilities to get the adjacency matrix
+  A = P > tau
+  list(A = A, Z = Z, grp = grp)
+}
+
+data = generate.network(300,delta=3,tau = 0.3)
+g = as.network(data$A)
+
+library(VBLPCM)
+out <- vblpcmfit(vblpcmstart(g,G=3,model = "plain",LSTEPS = 1e3),STEPS = 30)
+plot(out)
+
+plot(data$Z,col=data$grp,pch=19)
+```
+
+
+```{r eval=FALSE}
+T1 = T2 = c()
+sizes = seq(10,100,10)
+for (i in 1:length(sizes)){
+  n = sizes[i]
+  A = generate.network(n,delta=3,tau = 0.4)$A
+  g = as.network(A)
+  T1[i] = system.time(ergmm(g ~ euclidean(d = 2, G = G)))[[3]]
+  T2[i] = system.time(vblpcmfit(vblpcmstart(samplike,G=G,model = "plain",LSTEPS = 1e3),STEPS = 30))[[3]]
+}
+matplot(sizes[1:9],cbind(T1,T2),col='red',type='l')
+```
+Here, we see that the MCMC inference procedure of `latentnet` is not affordable compared to `VBLPCM` for networks of reasonnable sizes.
+
+## Clustering with the Stochastic Block Model
+
+The SBM model is implemented in the `mixer` package, which is available at https://cran.r-project.org/src/contrib/Archive/mixer/.
+
+```{r eval=FALSE}
+#install.packages("https://cran.r-project.org/src/contrib/Archive/mixer/mixer_1.9.tar.gz",
+#                 repos=NULL,type = "source")
+
+# Generate data according to SBM
+K = 3; N = 30
+tau = c(0.1,0.6,0.3)
+PI = rbind(c(0.05,0.15,0.2),
+           c(0.2,0.4,0.01),
+           c(0.15,0.01,0.3))
+PI = PI / 10
+C = t(rmultinom(N,1,tau))
+G = apply(C,1,which.max)
+A = matrix(0,N,N)
+for (i in 1:N){
+  for (j in 1:N){
+    A[i,j] = rbinom(1,1,PI[G[i],G[j]])
+  }
+}
+    
+# Clustering with mixer
+library(sna)
+library(mixer)
+out = mixer(A,qmin=1,qmax=10,directed = TRUE)
+plot(out)
+plot(out,frame=2)
+```
+
+Another package for that is the `blockmodels`:
+
+```{r}
+#install.packages("blockmodels")
+library(blockmodels)
+
+# ## generation of one SBM network
+# npc <- 30 # nodes per class
+# Q <- 3 # classes
+# n <- npc * Q # nodes
+# Z<-diag(Q)%x%matrix(1,npc,1)
+# P<-matrix(runif(Q*Q),Q,Q)
+# A<-1*(matrix(runif(n*n),n,n)<Z%*%P%*%t(Z)) ## adjacency matrix
+
+# Generate data according to SBM
+K = 3; N = 30
+tau = c(0.1,0.6,0.3)
+PI = rbind(c(0.05,0.15,0.2),
+           c(0.2,0.4,0.01),
+           c(0.15,0.01,0.3))
+PI = PI / 10
+C = t(rmultinom(N,1,tau))
+G = apply(C,1,which.max)
+A = matrix(0,N,N)
+for (i in 1:N){
+  for (j in 1:N){
+    A[i,j] = rbinom(1,1,PI[G[i],G[j]])
+  }
+}
+
+
+## estimation
+my_model <- BM_bernoulli("SBM",A)
+my_model$estimate()
+which.max(my_model$ICL)
+
+library(sna)
+cls = apply(my_model$memberships[[3]]$Z,1,which.max)
+gplot(A,edge.col = "lightgray",vertex.col = cls)
+```
+
+
+
+
+
+
+
+

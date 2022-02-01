@@ -1,0 +1,91 @@
+---
+title: "Learning with networks"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Manipulation and characterization of networks
+
+
+```{r}
+library(igraph)
+
+A = cbind(c(0,1,1,1),
+          c(1,0,1,1),
+          c(1,1,0,0),
+          c(1,0,1,0))
+```
+
+By default, the graph.adjacency function sees the networks as directed.
+
+```{r}
+g = graph.adjacency(A)
+plot(g)
+degree(g)
+```
+
+To inform the function that the network is undirected, we have to use the `mode` option:
+
+```{r}
+g = graph.adjacency(A,mode = "undirected")
+plot(g)
+degree(g)
+```
+
+Another statistic we can compute is the numbers of cliques.
+
+> Definition: A n-clique is a set of n nodes that are all connected together directly.
+
+```{r}
+cliques(g)
+```
+
+Here, we just have 4 1-cliques and 3 2-cliques
+
+> Exercise: write a small code which computes a signature for the network by counting how many cliques of each type we have in this network.
+
+```{r}
+signature <- function(g,Nmax = 10){
+  cl = cliques(g)
+  s = rep(0,Nmax)
+  for (i in 1:length(cl)){
+    l = length(cl[[i]])
+    s[l] = s[l] + 1
+  }
+  barplot(s)
+  return(s)
+}
+
+signature(g)
+```
+
+## The case of the Sampson monk network
+
+```{r}
+#install.packages("VBLPCM")
+library(VBLPCM)
+data(sampson)
+
+A <- as.matrix.network.adjacency(samplike)
+A
+```
+
+Let's first try to visualize this data set:
+
+```{r}
+g = graph.adjacency(A)
+plot(g)
+```
+
+> Exercice: use the code above to compute the clique signature for the Sampson data
+
+```{r}
+
+signature(g)
+
+```
+
+We can see here a summary of the global and local density/complexity of the network. Having in particular one 6-clique is an important information in this small network: there is a group of 6 persons who are all friends, in a network of 18 persons.
