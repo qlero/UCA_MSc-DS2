@@ -1,0 +1,391 @@
+---
+title: "Learning with Complex Data"
+author: "Quentin Le Roux"
+date: "2/2/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1 - General Questions
+
+1.1 **Explain the rational behind the stochastic block model (SBM) and what are the advantages or limits of this model compared to other approaches**
+
+A block model is a network modeling that can reduce the identification of vertices and edges of a network to a block image (e.g. a matrix $\Pi$) that capture a representation of the original network.
+
+[Introduced in 1983 in the field of social network by Holland et al.](https://www.sciencedirect.com/science/article/pii/0378873383900217?via%3Dihub), the Stochastic Block Model (SBM) is a generative model of networks (random graphs) that assumes the followwing:
+
+\begin{align}
+C_i&\sim\mathcal{M}(1,\rho)\\
+(Y_{ij}|C_{iq}C_{jl}=1)&\sim\mathcal{B}(\pi_{ql})\forall q,l\in\{1,\ldots,K\}
+\end{align}
+
+Where $C_i$ indicates the cluster membership of a note $i$, $Y_{ij}\in\{0,1\}$ indicates that there is an edge between node $i$ and $j$, and $\pi_{ql}\in[0,1]$ indicates the probability to connect between nodes belonging to the clusters $q$ and $l$. 
+
+The SBM model is effective in its ability to model social networks and especially features such as the presence of communities and influencers (also called stars).
+
+- A cluster $q$ is considered a community when $\pi_{qq}\ge\pi_{ql},\,q\neq l$, i.e. when the probability of a node in cluster $q$ to connect with nodes also in $q$ is larger than the probability to connect with nodes in other clusters.
+
+- A cluster $q$ is considered a hub/influencer/star when $\pi_{qq}\le\pi_{ql},\,q\neq l$, i.e. when the probability of a node in cluster $q$ to connect with nodes also in $q$ is smaller than the probability to connect with nodes in other clusters.
+
+The inference on SBM models targets the parameters $\rho$, $\pi$ and $C$, estimated from the data $Y$. This inference can be performed via different types of algorithms such that Monte Carlo Markov Chain (MCMC) and Variational Expectation Maximization (VEM).
+
+1.2 **Explain how one can select the appropriate number of groups in statistical clustering approaches.**
+
+To choose the number of clusters $C$, model selection can be employed by using criteria such that Akaike Information Criterion (AIC), Bayesian Information Criterion (BIC), etc. 
+
+The maximized value of the log-likelihood (after an iterative optimization process) is computed (with a penalty depending on the criterion) and compared between different setup (here obtained by varying the number of clusters $C$) and the highest obtained criterion value should indicate which parameter maximize the likelihood of the underlying model.
+
+As such, given a criterion method, we would like to find the number of clusters $C$ that maximizes the log-likelihood of the SBM. 
+
+In the case of SBM, we would tend to prefer the Integrated Classification Likelihood (C. Biernacki, G. Celeux and G. Govaert. Assessing a mixture model for clustering with the integrated classification likelihood. Technical Report 3521, INRIA, Rhone-Alpes, 1998), an update of the BIC such that:
+
+$$ICL = BIC - \underset{i}{\sum}\underset{j}{\sum}\hat{C}_{ij}log(\hat{C}_{ij})$$
+
+## 2 - Calculations and Implementations
+
+1. **Write down the log-likelihood associated to this model, that one would have to maximize to find estimates for model parameters (all calculations should be provided)**
+
+TBD
+
+As such we find:
+
+\begin{align}
+\mathcal{l}&=\underset{i=1\\j=1\\i\neq j}{\overset{n}{\sum}}\big[X_{ij}(\alpha + \beta Y_{ij} - d_{ij}^2) - log(1+exp(\alpha + \beta Y_{ij} - d_{ij}^2))\big]
+\end{align}
+
+Where $X_{ij}\in\{0,1\}$ are the connections, $z_i$ and $z_j$ the coordinates of nodes $i$ and $j$ in the latent space of the LSM model, $Y_{ij}$ the covariates of the node-pair $(i,j)$, and $d_{ij}^2 = ||z_i - z_j||^2$
+
+2 **Modify the implementation of the LSM code of the course to allow the inference of such a model from data.**
+
+<u>Library import</u>
+
+```{r, message=FALSE}
+
+library(sna)
+library(VBLPCM)
+
+```
+
+<u>Function declaration</u>
+
+```{r}
+
+LSM <- function(A, alpha, beta, covariates, dim=2, ...) {
+  # A is the adjacency matrix and is denoted by X in the maths,
+  # dim is the dimensionality of the latent space (2 by default)
+  n = nrow(A)
+  
+  # definition of the log-likelihood to optimize
+  negloglik <- function(theta, A, covariates, dim) {
+    ll = 0
+    alpha = theta[1]
+    beta = theta[2]
+    Z = matrix(theta[-1][-1], ncol=dim)
+    D = as.matrix(dist(Z))
+    for (i in 1:(n-1)){
+      for (j in (i+1):n){
+        betaY = beta %*% covariates[i,j]
+        ll = ll + A[i,j]*(alpha + betaY - D[i,j]) - log(1 + exp(alpha + betaY - D[i,j]))
+      }
+    }
+    negll = - 2 * ll
+  }
+    
+  # Initial values for theta
+  Z = rnorm(n*dim, 0, 1)
+  theta = c(alpha, beta, Z)
+  
+  # Numerical optimization
+  theta_opt = optim(theta,negloglik,A=A, covariates=covariates, dim=dim,...) 
+  
+  # Plot and return the results
+  alpha = theta_opt$par[1]
+  beta = theta_opt$par[2]
+  Z = matrix(theta_opt$par[-1][-1], ncol=dim)
+  return(list(alpha=alpha, beta=beta, Z=Z))
+}
+
+```
+
+3. **Simulate some artificial data according to this model and apply your code to check if it is working correctly (or not ;-) The covariates may be the differences between the simulated ages of the nodes, i.e. $X_{ij} = |ai − aj|$ where $a_i$ is the age of node i.**
+
+<u>data simulations</u>
+
+```{r}
+
+# Declares the adjacency matrix of 5 nodes
+A = cbind(c(0,1,1,1,0,1),
+          c(1,0,1,0,1,0),
+          c(1,0,0,1,0,0),
+          c(1,1,0,0,0,0),
+          c(0,1,1,0,0,0),
+          c(1,0,0,0,0,0))
+
+# Declares the respective ages of each note
+ages = c(25,32,52,19,46,29)
+
+# Computes the matrix of covariates
+# i.e. the difference between the ages of each node
+covariates = matrix(0, 6, 6)
+for (i in 1:6) {
+    for (j in 1:6) {
+        covariates[i,j] = abs(ages[i]-ages[j])
+    }
+}
+
+# Plots without covariates
+gplot(A, edge.col="lightgray",label=1:6)
+
+# Plots with covariates
+gplot(A, coord=covariates, edge.col="lightgray",label=1:6)
+
+```
+
+We see that the addition of the covariates changes the structure representation of the graph.
+
+<u>LSM run</u>
+
+We try a first run for testing purposes:
+
+```{r}
+
+LSM(A, 0.5, 1, covariates, dim=2)
+
+```
+
+We now try to perform a more informed LSM run with the SANN method and plot the resulting graph:
+
+```{r}
+
+out = LSM(A, alpha=0.5, beta=1, covariates, dim=2,
+          method="SANN")
+gplot(A, coord = out$Z, edge.col="lightgray", label=1:5)
+
+out$Z
+
+```
+
+## 3 - Short Project: Analysis of the Enron email network
+
+**The result of the project should be a Rmarkdown document/notebook containing:**
+
+- an explanation of your positioning for this project,
+- the codes used for the project (with enough comments and description),
+- the interpretation of the obtained results,
+- a conclusion
+
+### Overview of the project / Positioning
+
+Enron is one of the key events that occurred at the time of the so-called Dotcom bubble. This period of volatility, often described as starting with the merger between America One and Time Warner in early January 2000 and which culminated with a financial crisis and the political upheaval of the Florida recount in 2000 and the the 9/11 terrorist attack, has been a major turning point that marked the start of the 21st century worldwide.
+
+The Enron debacle, which will be recalled less than a decade later with the MAdoff scandal and the fall of Lehman Brothers is a case-study in corporate mismanagement and obfuscation -- which has long been targeted by external auditors and regulators (such as the SEC in the USA) in order to ensure market stability and trust.
+
+As such, the study of such obfuscation, both externally (from the company towards the market/investors) and internally (between people, teams, management, etc.), is an interesting topic of research in terms of network analysis which can have repercussions on regulatory but also legal grounds.
+
+In this perspective we are interested in looking at the network of email exchanges at the Enron company in the few years to led to its supposed boom, and subsequent demise. As such, we are interested in studying the connections between Enron employees.
+
+### Reconstructing the graph network
+
+<u>Loading the dataset</u>
+
+```{r}
+
+enron = load("Enron.Rdata")
+cat("We have loaded the following dataset:", enron)
+
+```
+
+```{r}
+
+summary(employeelist)
+summary(message)
+summary(recipientinfo)
+
+employeelist[1:3,]
+
+message[1:3,]
+
+recipientinfo[1:3,]
+
+```
+
+<u>Constructing transactional data</u>
+
+By analyzing the three relational databases we are interested in, we want to perform an `outer join` operations on the message ID present in the databases `messages` and `recipientinfo` in order to have both senders and recipients as well as the type of send (to, cc, bcc) of the mail. We want to build out transactional data frame.
+
+```{r}
+
+senders = message[,1:3] # mid, sender (email), date
+recipients = recipientinfo[, 2:4] # mid, to, rvalue (email)
+transactional_data = merge(x=senders, y=recipients, by="mid", all=T)
+
+head(transactional_data)
+
+```
+
+We are interested in knowing how many unique addresses are referenced:
+
+```{r}
+
+unique_sender_addresses = unique(transactional_data[,2]) # 2 = senders
+unique_recipient_addresses = unique(transactional_data[,5])
+unique_addresses = unique(c(unique_sender_addresses, 
+                            unique_recipient_addresses))
+
+length(unique_addresses)
+
+```
+
+This is an enormous number of addresses, we can do better. If we look at the employeelist dataset, we find that a much lower number of 'true' employee addresses are referenced.
+
+```{r}
+
+true_unique_employee_address = unique(c(employeelist$Email_id, 
+                                        employeelist$Email2, 
+                                        employeelist$Email3, 
+                                        employeelist$EMail4))
+
+length(true_unique_employee_address)
+
+```
+
+<u>Constructing an adjacency matrix from the transactional data</u>
+
+We will compute an adjacency matrix for each true unique employee email address now (knowing there is some redundancy in terms of network analysis as some employee have several addresses to their names). For the following construction, we will not care about the type of send (to, cc, bcc).
+
+```{r}
+
+sender_recipient = unique(transactional_data[,c(2,5,3)])
+employee_transactional_data = sender_recipient[sender_recipient[,1]%in%true_unique_employee_address,]
+
+transactional_to_adjacency <- function(data, employee_addresses) {
+  ### Computes the adjacency matrix from transactional data
+  # declares parameters
+  n = length(employee_addresses)
+  # creates empty adjacency
+  A = matrix(0, n, n)
+  colnames(A) = employee_addresses
+  # for each existing employee address
+  for (sender in employee_addresses) {
+    idx = which(employee_addresses==sender)
+    # find the corresponding mail exchange recipients
+    exchanges = data[
+      which(data[,1]==sender),
+    ]
+    # Populates the adjacency matrix accordingly
+    for (recipient in exchanges[,2]) {
+      idy = which(employee_addresses==recipient)
+      A[idx, idy] = 1
+    }
+  }
+  return(list(employee_addresses=employee_addresses, A=A))
+}
+
+```
+
+### Constructing coordinates
+
+We also are interested in comparing those exchanges between employees. As such, we want to consider exchanges as most relevant as we are nearing the death of the Enron company. I.e. the more recent the exchange, the likely more relevant it is -- as in case of fraud, it happens that involved people may panick. As such, we want to compute the age of the most recent exchange as well.
+
+```{r}
+
+transactional_to_dates <- function(data, employee_addresses) {
+  ### Computes the adjacency matrix from transactional data
+  # declares parameters
+  n = length(employee_addresses)
+  # creates empty adjacency
+  Z = matrix(0, n, n)
+  colnames(Z) = employee_addresses
+  # for each existing employee address
+  for (sender in employee_addresses) {
+    idx = which(employee_addresses==sender)
+    # find the corresponding mail exchange recipients
+    exchanges = data[
+      which(data[,1]==sender),
+    ]
+    last_exchange_date = max(data[,3])
+    # Populates the adjacency matrix accordingly
+    for (recipient in exchanges[,2]) {
+      idy = which(employee_addresses==recipient)
+      Z[idx, idy] = abs(max(exchanges[which(exchanges[,2]==recipient),3])-last_exchange_date)
+    }
+  }
+  return(list(employee_addresses=employee_addresses, Z=Z))
+}
+
+```
+
+### Visualizing the data
+
+<u>Visualizing the full graph over the whole period</u>
+
+We start by computing the full adjacency matrix over the whole available period:
+
+```{r}
+
+A = transactional_to_adjacency(
+  employee_transactional_data,
+  true_unique_employee_address
+)
+
+#Z = transactional_to_dates(
+#  employee_transactional_data,
+#  true_unique_employee_address
+#)
+
+#gplot(A$A,coord=Z$Z, edge.col="lightgray")
+gplot(A$A, edge.col="lightgray")
+
+```
+
+We find that the resulting graph has a lot of email addresses as potential senders that were never used, we remove those:
+
+```{r}
+
+remove_empty_entries <- function(A) {
+  # Finds the intersections of empty rows and columns
+  # and removes them
+  emptycols = which(colSums(A)==0)
+  emptyrows = which(rowSums(A)==0)
+  empty_idx = Reduce(intersect, list(emptyrows, emptycols))
+  A[-empty_idx, -empty_idx]
+}
+
+A_filled = remove_empty_entries(A$A)
+gplot(A_filled, edge.col = "lightgray")
+
+```
+
+### Performing data analytics on the network
+
+We will use the LPCM here.
+
+```{r}
+
+library(latentnet)
+
+out <- vblpcmfit(vblpcmstart(as.network(A_filled), G=3, model="plain", LSTEPS=1e3), STEPS=30)
+plot(out)
+
+```
+
+```{r}
+
+out <- vblpcmfit(vblpcmstart(as.network(A_filled), G=5, model="plain", LSTEPS=1e3), STEPS=30)
+plot(out)
+
+```
+
+```{r}
+
+out <- vblpcmfit(vblpcmstart(as.network(A_filled), G=10, model="plain", LSTEPS=1e3), STEPS=30)
+plot(out)
+
+```
+
+### Conclusion
+
+We see that we can distinguish different groups within the graph. This is interesting as we could perform some clique analysis tied to the rank/position of the employee in the hierarchy, coupled with date analysis (as implemented with the function `transactional_to_dates` but that we didn't have time to use here), in order to find potential out-of-character behavior that could indicate fraudulent operations/meetings/and other obfuscation that led Enron to be pinned and then dismantled by the SEC and US government.
