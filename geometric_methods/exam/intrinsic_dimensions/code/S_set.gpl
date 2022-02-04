@@ -1,0 +1,4 @@
+set key top left box lw 1  lc rgb "#7F7F7F" font ",10" spacing 2
+set border 4095 lw 1 lc rgb "#7F7F7F" 
+set title "ID Estimation ./datasets/cauchy20" font ",20"
+p 'fun.dat' lc rgb "#7F7F7F" pt 7 not,  'fun.dat' lc rgb "#DC143C" pt 7 t "S set", 20.07*x lw 2 lc rgb "#00BFFF" t " 20.07
