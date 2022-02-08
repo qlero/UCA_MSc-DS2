@@ -1,0 +1,398 @@
+---
+title: "Exam, Stochastic Models in Neurocognition"
+author: "Quentin Le Roux"
+date: "2/8/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Exercise 1
+
+### Question 1
+
+The [STAR package](https://cran.r-project.org/web/packages/stars/index.html) is a R package available on the CRAN repository that provides both data and functions in the space of neurocognition and specifically the analysis of neuronal spike trains (e.g. it provides tools to visualize spike trains and fit, test and compare models of discharge applied to actual data).
+
+**Package and data import**
+
+```{r, message=F, echo=T, results='hide'}
+
+# Library import
+# install.packages("STAR")
+library(STAR)
+
+# Data import
+data(e060824spont)
+
+```
+
+**What is `e060824spont`?**
+
+`e060824spont` contains the spike train data (counting process) of two antennal lobe neurons (putative projection neurons) recorded simultaneously and extracellularly during spontaneous activity responses from six different animals. The data are the respective sorted spike trains of the two neurons.
+
+**Plot display of the first `e060824spont` neuron**
+
+```{r, out.width="100%"}
+e060824spont$`neuron 1`
+```
+
+**Plot display of the second `e060824spont` neuron**
+
+```{r, out.width="100%"}
+e060824spont$`neuron 2`
+```
+
+### Question 2
+
+We recall the definition of a homogeneous Poisson process with parameter $r$.  We yield a homogeneous Poisson process if the independent and identically distributed random variables $\forall k \in\mathbb{N},\,\tilde{T}^k\sim\mathcal{E}(r)$, the exponential distribution with parameter $r$.
+
+\begin{align}
+\forall k \in\mathbb{N},\,\tilde{T}^k&\sim\mathcal{E}(r)\\
+\forall j \in\mathbb{N}_+,\,T^j &= \overset{j}{\underset{k=1}{\sum}}\tilde{T}^k\\
+T^0&=\tilde{T}^0\\
+N_t&=k\quad\quad\text{(a counting variable s.t. $t\in[T^k,T^{k+1}]$)}
+\end{align}
+
+Furthermore definition of a homogeneous Poisson Process $N_t$ given a rate parameter $\nu$ and a time interval $t$ is: $$N_t\sim\mathcal{P}(\nu t)$$
+
+Now, we observe $N^1$, a homogeneous Poisson process with rate/intensity (fixed) $\nu_1\in\mathbb{R}_+$. A homogeneous Poisson Process is well-adapted to count the number of spikes that occurred before a time $t$. 
+
+From this we can state that in a given interval $\forall T\in N^2,\,[T-\delta, T+\delta]$ (i.e. a time length of $2\delta$), the distribution of $N^1_{[T-\delta, T+\delta]}$ knowing $N^1$ is a homogeneous Poisson process with rate $\nu_1$ is given by: $$\forall \delta, \nu_1 \in\mathbb{R}_+,\,N^1_{[T-\delta, T+\delta]}\sim\mathcal{P}(2\delta\nu_1)$$
+
+### Question 3
+
+Given that we previously stated $\forall \delta, \nu_1 \in\mathbb{R}_+,\,N^1_{[T-\delta, T+\delta]}\sim\mathcal{P}(2\delta\nu_1)$, and assuming independence between each $\forall\delta\in\mathbb{R}_+N^1_{[T-\delta, T+\delta]}$ (as interspike intervals are independent and identically distributed), a sum of independent Poisson random variables corresponds to a Poisson random variables which parameters are the sum of the starting Poisson random variables, i.e.
+
+$$\forall i\in\{1,...,n\},X_i\sim\mathcal{P}(\lambda_i),\text{ then }\underset{i=1}{\overset{n}{\sum}}X_i\sim\mathcal{P}(\underset{i=1}{\overset{n}{\sum}}\lambda_i) $$
+
+As such, 
+
+\begin{align}
+N^1_{[T-\delta, T+\delta]}&\sim\mathcal{P}(2\delta\nu_1)\\
+\underset{T\in N^2}{\sum}N^1_{[T-\delta, T+\delta]}&\sim\mathcal{P}(\underset{T\in N^2}{\sum}2\delta\nu_1)\\
+&\sim\mathcal{P}(2\delta\nu_1\underset{T\in N^2}{\overset{n}{\sum}}1)\\
+&\sim\mathcal{P}(2\delta\nu_1N^2_{[0, T_{max}]})
+\end{align}
+
+### Question 4
+
+```{r}
+
+# Retrieves first half of the recording of neuron 1
+neuron1_data  = as.vector(e060824spont[["neuron 1"]])
+midpoint      = round(max(neuron1_data)/2)
+n1_first_half = neuron1_data[which(neuron1_data<=midpoint)]
+
+```
+
+We recall the Maximum Likelihood Estimator of a rate/intensity $\lambda$ of a Poisson random variable:
+
+\begin{align}
+\hat{\lambda}&=\underset{i}{\overset{n}{\sum}}k_i\text{, with $k_i$ an observation}\\
+&=\bar{X}\text{, the average number of observations over a unit of time}
+\end{align}
+
+```{r}
+
+n1_fh_sample_mean = mean(n1_first_half)
+
+```
+
+### Question 5
+
+
+
+
+## Exercise 2 -- 
+
+### Question 6
+
+**Conceptualization of Noisy Integrate and Fire Model**
+
+The dynamics between the spikes of the membrane potential is given as a solution of the dynamical system (ordinary differential equation):
+
+$$dV^\epsilon_t=b(V^\epsilon_t)dt+\epsilon dW_t$$
+
+- We consider a threshold $S$:
+    - At time where $V_t$ crosses the constant level $S$, there is a spike
+    - After a "small" delay $\delta$, $V_{\tau_1+\delta}=V^r$
+
+Those models are deterministic s.t. $\tau_2-\tau_1 = tau_{i+1}-\tau_i$ when $\epsilon=0$.
+
+**Algorithm to generate the Noisy Integrate and Fire Model**
+
+One can generate a NIF-modeled neuron such that:
+
+1. Fix a time step/discretization $\eta$
+2. At each time step $t_k = k\eta$
+    - 2.a $\tilde{V}_{t_{k+1}} = \bar{V}_{t_k} + b(\bar{V}_{t_k})\eta + \epsilon(W_{t_{k+1}} - W_{t_k})$ with $\epsilon$ an intensity parameter and $(W_{t_{k+1}} - W_{t_k}) \sim \sqrt{\eta}\mathcal{N}(0,1)$
+    - 2.c If $\tilde{V}_{t_{k+1}}< S$, we set $\bar{V}_{t_{k+1}} = \tilde{V}_{t_{k+1}}$
+    - 2.b If $\tilde{V}_{t_{k+1}}\ge S$, we decide that the neuron spikes on $[t_k, t_{k+1}]$ and we set $\tau^t = t_k$ and $\bar{V}_{t_{k+1}}=V_r$
+    
+
+### Question 7
+
+Given the theoretical algorithm, considered efficient, declared above and given $n$ independent neurons to simulate.
+We can generate a matrix of simulations over a given interval $[0, T_{max}]$ by performing a map of the algorithm above over a vector of $n$ elements (their value does not matter as they will be dropped). This map can be performed using the `apply` function in R or a `for` loop.
+
+In summary, we can loop over the algorithm as many times as necessary.
+
+### Question 8
+
+```{r}
+
+# Define base functions and parameters
+b <- function(v) {2*(3-v)}
+
+S         = 1.5
+epsilon_1 = 0.3
+epsilon_2 = 0
+n_mc      = 372
+Tmax      = 12
+V_rest    = 0
+eta       = 0.05 # we set a time step of 0.05
+
+```
+
+```{r}
+
+# Defines the simulation function
+single_neuron_spike_train_simulation <- function(
+    Tmax, epsilon, 
+    drift, eta, S,
+    V_rest
+) {
+  # Tmax defines the covered time interval starting at 0
+  # epsilon defines the intensity of the noise computed via Brownian motion
+  # drift is the drift function of the simulation process
+  # eta is the selected timestep
+  # S the spiking threshold
+  # V_start is the starting value of the voltage
+  timesteps    = seq(0, Tmax, eta)
+  neuron_data  = matrix(V_rest, nrow=length(timesteps))
+  spikes       = c()
+  for (i in 2:length(timesteps)) {
+    previous_V = neuron_data[i-1,]
+    noise      = epsilon*sqrt(eta)*rnorm(1)
+    tilde_V    = previous_V + drift(previous_V)*eta + noise
+    if (tilde_V < S) {
+      bar_V    = tilde_V
+    } else {
+      spikes   = c(spikes, timesteps[i])
+      bar_V    = V_rest
+    }
+    neuron_data[i,] = bar_V
+  }
+  return(list(V=neuron_data, spikes=spikes))
+}
+
+many_spike_train_simulations <- function(
+  # Simulates n_simulations spike train simulations
+  n_simulations,
+  Tmax, epsilon, 
+  drift, eta, S,
+  V_rest
+) {
+  placeholder = matrix(c(1:n_simulations))
+  simulations = apply(placeholder, 1, function(x) {
+    single_neuron_spike_train_simulation(
+      Tmax, epsilon,
+      drift, eta, S,
+      V_rest
+    )$spikes
+  })
+  simulations
+}
+
+plot_raster <- function(simulations, is_deterministic=F) {
+  # Plot a raster representation of the data
+  # adds a very small noise to simulation to coerce
+  # the library STAR to project the data as identical simulations
+  # are rejected
+  if (is_deterministic) {
+    sim = simulations + abs(matrix(rnorm(34*372,0, 0.0001), 34, 372))
+    title = "Raster plot of deterministic spike strains, collapsed into same row"
+  }  else {
+    sim = simulations 
+    title = "Raster plot of simulated spike strains"
+  }
+  simulations = as.repeatedTrain(sim)
+  plot(simulations,
+       colStim = "grey80",
+       main = title,
+       ylab = "trials",
+       xlab = "Time (s)",
+       yaxt = "n"
+  )
+}
+
+
+
+
+```
+
+```{r}
+
+# Simulations
+
+simulation_1 = many_spike_train_simulations(
+  n_mc, Tmax, epsilon_1, b, eta, S, V_rest
+)
+
+simulation_2 = many_spike_train_simulations(
+  n_mc, Tmax, epsilon_2, b, eta, S, V_rest
+)
+
+```
+
+```{r, out.width="100%"}
+
+# Plots
+
+plot_raster(simulation_1)
+
+plot_raster(simulation_2, T)
+
+```
+
+### Question 10
+
+```{r}
+
+# Define base functions and parameters
+b <- function(v) {1.43-v}
+I <- function(t) {0.03*(1+sin(3*t))}
+
+S         = 1.5
+epsilon_1 = 0.3
+epsilon_2 = 0
+n_mc      = 987
+Tmax      = 12
+V_rest    = 0
+eta       = 0.05 # we set a time step of 0.05
+
+```
+
+```{r}
+
+# Defines the simulation function
+single_neuron_spike_train_simulation <- function(
+    Tmax, epsilon, 
+    drift, I, eta, S,
+    V_rest
+) {
+  # Tmax defines the covered time interval starting at 0
+  # epsilon defines the intensity of the noise computed via Brownian motion
+  # drift is the drift function of the simulation process
+  # eta is the selected timestep
+  # S the spiking threshold
+  # V_start is the starting value of the voltage
+  timesteps    = seq(0, Tmax, eta)
+  neuron_data  = matrix(V_rest, nrow=length(timesteps))
+  spikes       = c()
+  for (i in 2:length(timesteps)) {
+    previous_V = neuron_data[i-1,]
+    noise      = epsilon*sqrt(eta)*rnorm(1)
+    It         = I(i)
+    tilde_V    = previous_V + drift(previous_V)*eta + noise
+    if (tilde_V < S) {
+      bar_V    = tilde_V
+    } else {
+      spikes   = c(spikes, timesteps[i])
+      bar_V    = V_rest
+    }
+    neuron_data[i,] = bar_V
+  }
+  return(list(V=neuron_data, spikes=spikes))
+}
+
+many_spike_train_simulations <- function(
+  # Simulates n_simulations spike train simulations
+  n_simulations,
+  Tmax, epsilon, 
+  drift, I, eta, S,
+  V_rest
+) {
+  placeholder = matrix(c(1:n_simulations))
+  simulations = apply(placeholder, 1, function(x) {
+    single_neuron_spike_train_simulation(
+      Tmax, epsilon,
+      drift, I, eta, S,
+      V_rest
+    )$spikes
+  })
+  simulations
+}
+
+plot_raster <- function(simulations, is_deterministic=F) {
+  # Plot a raster representation of the data
+  # adds a very small noise to simulation to coerce
+  # the library STAR to project the data as identical simulations
+  # are rejected
+  if (is_deterministic) {
+    sim = simulations + abs(matrix(rnorm(34*372,0, 0.0001), 34, 372))
+    title = "Raster plot of deterministic spike strains, collapsed into same row"
+  }  else {
+    sim = simulations 
+    title = "Raster plot of simulated spike strains"
+  }
+  simulations = as.repeatedTrain(sim)
+  plot(simulations,
+       colStim = "grey80",
+       main = title,
+       ylab = "trials",
+       xlab = "Time (s)",
+       yaxt = "n"
+  )
+}
+
+
+
+
+```
+
+```{r}
+
+# Simulations
+
+simulation_1 = many_spike_train_simulations(
+  n_mc, Tmax, epsilon_1, b, I, eta, S, V_rest
+)
+
+#simulation_2 = many_spike_train_simulations(
+#  n_mc, Tmax, epsilon_2, b, I, eta, S, V_rest
+#)
+
+```
+
+```{r, out.width="100%"}
+
+# Plots
+
+plot_raster(simulation_1)
+
+#plot_raster(simulation_2, T)
+
+```
+
+We obtain the spiking rate lambda by taking the average number of spikes in a unit of time (s). I.e. we use the sample mean.
+
+We compute the rate for the simulation with $\epsilon_1 = 0.3$ and $\epsilon_2=0$.
+
+```{r}
+
+#rates_s1 = compute_rate_of_simulation(simulation_1, Tmax)
+#plot(rates_s1$rates, xlab="simulation", ylab="rate")
+#lines(matrix(rates_s1$mean, n_mc), col="red", type="l")
+
+```
+
+```{r}
+
+
+#rates_s2 = compute_rate_of_simulation(simulation_2, Tmax)
+#plot(rates_s2$rates, xlab="simulation", ylab="rate", type="l")
+
+```
